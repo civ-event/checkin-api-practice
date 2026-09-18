@@ -1,0 +1,24 @@
+# 依赖与构建产物
+/vendor/
+/node_modules/
+composer.phar
+
+# 环境与密钥
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# 日志与运行时
+/var/log/
+/var/cache/
+*.log
+
+# Docker 数据（若本地挂载）
+/docker/mysql/data/
