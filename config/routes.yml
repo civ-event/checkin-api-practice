@@ -1,0 +1,138 @@
+# 这些 path 是去掉入口脚本名之后的 PATH_INFO。
+# 浏览器或 curl 要写 /front.php/memcached，路由里只写 /memcached。直接写 /front.php 会对不上，变成 404。
+
+# 内核探活，正文是纯文本 slimapp ok
+slim_health:
+  path: /
+  defaults:
+    _controller: SlimHealthController::healthAction
+
+# 确认 services.yml 里的 Memcached 客户端可用
+slim_memcached:
+  path: /memcached
+  defaults:
+    _controller: SlimHealthController::memcachedAction
+
+# 抢一把探测锁再释放，正文是 lock ok
+slim_lock:
+  path: /lock
+  defaults:
+    _controller: SlimHealthController::lockAction
+
+# SELECT 1，确认 Doctrine 连上 MySQL
+slim_db:
+  path: /db
+  defaults:
+    _controller: SlimHealthController::dbAction
+
+# 确认数组返回值会被 JsonResultHandler 编成 JSON
+slim_json:
+  path: /json
+  defaults:
+    _controller: SlimHealthController::jsonAction
+
+# 月度签到状态。需要旧登录接口签发的 Bearer token
+slim_checkin_status:
+  path: /check-in/status
+  defaults:
+    _controller: SlimCheckInController::statusAction
+
+# 只打卡。今天已经签过时，业务会拒绝，目前仍是 Symfony 的 500 HTML
+slim_checkin_clock_in:
+  path: /check-in/clock-in
+  methods: [POST]
+  defaults:
+    _controller: SlimCheckInController::clockInAction
+
+# 领取某一天。必须已签且未领
+slim_checkin_claim:
+  path: /check-in/claim
+  methods: [POST]
+  defaults:
+    _controller: SlimCheckInController::claimAction
+
+# 月度累充状态。成功时正文就是数据本身，没有包 {code,message,data}
+slim_recharge_status:
+  path: /recharge/status
+  methods: [GET]
+  defaults:
+    _controller: SlimRechargeController::statusAction
+
+# 练习假入账
+slim_recharge_record:
+  path: /recharge/record
+  methods: [POST]
+  defaults:
+    _controller: SlimRechargeController::recordAction
+
+# 按档位领奖
+slim_recharge_claim:
+  path: /recharge/claim
+  methods: [POST]
+  defaults:
+    _controller: SlimRechargeController::claimAction
+
+# 假账号的角色列表
+slim_auth_roles:
+  path: /auth/roles
+  methods: [POST]
+  defaults:
+    _controller: SlimAuthController::rolesAction
+
+# 登录。role.user_role_primary_id 才是后面接口用的角色主键
+slim_auth_login:
+  path: /auth/login
+  methods: [POST]
+  defaults:
+    _controller: SlimAuthController::loginAction
+
+# 下面这些 path 与旧 Slim 4 的地址相同，控制器仍是新内核里的那几个。
+# 现在用 /front.php 前缀验证。index.php 等这些地址都通了再换。
+
+slim_auth_roles_legacy:
+  path: /api-front/auth/roles
+  methods: [POST]
+  defaults:
+    _controller: SlimAuthController::rolesAction
+
+slim_auth_login_legacy:
+  path: /api-front/auth/login
+  methods: [POST]
+  defaults:
+    _controller: SlimAuthController::loginAction
+
+slim_checkin_status_legacy:
+  path: /api-front/activity/check-in/status
+  methods: [GET]
+  defaults:
+    _controller: SlimCheckInController::statusAction
+
+slim_checkin_clock_in_legacy:
+  path: /api-front/activity/check-in/clock-in
+  methods: [POST]
+  defaults:
+    _controller: SlimCheckInController::clockInAction
+
+slim_checkin_claim_legacy:
+  path: /api-front/activity/check-in/claim
+  methods: [POST]
+  defaults:
+    _controller: SlimCheckInController::claimAction
+
+slim_recharge_status_legacy:
+  path: /api-front/activity/recharge/status
+  methods: [GET]
+  defaults:
+    _controller: SlimRechargeController::statusAction
+
+slim_recharge_record_legacy:
+  path: /api-front/activity/recharge/record
+  methods: [POST]
+  defaults:
+    _controller: SlimRechargeController::recordAction
+
+slim_recharge_claim_legacy:
+  path: /api-front/activity/recharge/claim
+  methods: [POST]
+  defaults:
+    _controller: SlimRechargeController::claimAction

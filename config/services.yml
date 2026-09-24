@@ -1,0 +1,44 @@
+# SlimApp 的 Symfony 容器。路由、Memcached、JSON 包装和错误处理都在这里声明。
+parameters:
+  default.namespace:
+    - Oasis\Mlib\
+    - Checkin\
+
+services:
+  app:
+    properties:
+      logging:
+        path: "%app.dir.log%"
+        level: debug
+      cli:
+        name: checkin
+        version: "0.1"
+      http:
+        cache_dir: "%app.dir.cache%"
+        # 控制器返回数组时，用这个服务把它变成 JSON。id 必须和下面的 view_handler 一致
+        view_handlers:
+          - "@view_handler"
+        error_handlers:
+          - "@slim_error_handler"
+        routing:
+          path: "%app.dir.config%/routes.yml"
+          # 路由里的控制器短名会在这两个命名空间里找
+          namespaces:
+            - Checkin\
+            - Checkin\Controllers\
+  # 容器内主机名就是 compose 里的服务名 memcached，端口 11211。不要写成 %memcached.port%，那个参数不存在
+  memcached:
+    class: Memcached
+    public: true
+    calls:
+      - [addServer, ["memcached", 11211]]
+
+  # 服务 id 用下划线。写成 view.handler 时，上面的 @view_handler 会在编译期找不到它
+  view_handler:
+    class: Checkin\Http\JsonResultHandler
+    public: true
+
+  # 把 BusinessException 收成 {code, message, data}，不要再出 Symfony HTML
+  slim_error_handler:
+    class: Checkin\Http\SlimJsonErrorHandler
+    public: true

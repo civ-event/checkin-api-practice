@@ -2,6 +2,6 @@
 
 declare(strict_types=1);
 
-// 默认入口。Nginx 把 /api-front/... 回退到这个文件，SlimApp 按原始路径匹配路由。
+// 和 index.php 同一套 SlimApp。/front.php/check-in/status 这类地址仍可用。。
 $app = require dirname(__DIR__) . '/slimapp-bootstrap.php';
 $app->getHttpKernel()->run();

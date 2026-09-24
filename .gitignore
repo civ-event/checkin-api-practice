@@ -22,3 +22,6 @@ composer.phar
 
 # Docker 数据（若本地挂载）
 /docker/mysql/data/
+
+docker/php/charles-ca.pem
+docker/php/private-composer-ca.pem

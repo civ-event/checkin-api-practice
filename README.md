@@ -1,33 +1,79 @@
 # checkin-api-practice
 
-签到接口后端学习实战：Slim + PDO/Doctrine + Redis + Docker Compose。
+签到与月度充值练习。HTTP 入口是公司的 SlimApp（`oasis/slimapp`），进度在 MySQL，锁用 Memcached。
 
 ## 快速开始
 
 ```bash
 cp .env.example .env
 docker compose up -d --build
-curl -s http://localhost:8080/health
+docker compose exec app composer install
+docker compose exec app php scripts/pdo_migrate.php
+curl -s http://localhost:18080/
 ```
 
-## 服务
+`curl /` 的正文是纯文本 `slimapp ok`。默认端口是 `18080`。
 
-| 服务 | 端口 | 说明 |
-|------|------|------|
-| nginx + php | 8080 | HTTP API |
-| mysql | 3306 | 业务库 |
-| redis | 6379 | 锁 / 缓存 |
+`pdo_migrate.php` 只给空库用，它只执行 `scripts/sql/001`。本机库如果已经导入过 `002`–`005`，不要再执行。
+
+## 常用验收
+
+角色乙登录。JWT 里的 `role_id` 是 `user_role_primary_id`（角色表主键），不是游戏角色字符串 `r200`。
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:18080/api-front/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"access_token":"token-player-1001","server_id":"s2","role_id":"r200"}' \
+  | php -r 'echo json_decode(stream_get_contents(STDIN))->data->token;')
+```
+
+成功和业务错误都是 `{code, message, data}`。`code` 为 `0` 表示成功。签到进度在 `data` 里。打卡成功没有礼物；领奖成功才有 `gift_id`。发奖日志在 `docker compose logs app` 里搜 `[gift] sent`。
+
+```bash
+curl -s http://localhost:18080/api-front/activity/check-in/status \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -s -X POST http://localhost:18080/api-front/activity/check-in/clock-in \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"check_day":1}'
+
+curl -s -X POST http://localhost:18080/api-front/activity/check-in/claim \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"check_day":1}'
+```
+
+充值活动 id 在 `RechargeService` 里固定为 `2`，不读 JWT 里的签到活动 `1`。`/record` 是练习用的假入账。
+
+```bash
+curl -s http://localhost:18080/api-front/activity/recharge/status \
+  -H "Authorization: Bearer $TOKEN"
+```
 
 ## 学习进度
 
 1. [x] Docker Compose 本地环境
-2. [ ] Slim 路由 + JSON + CORS
-3. [ ] PDO 签到表读写
-4. [ ] Doctrine Entity / Repository
-5. [ ] 分层架构
-6. [ ] GET status
-7. [ ] POST clock-in
-8. [ ] 校验 / 异常 / 日志
-9. [ ] Redis 分布式锁
-10. [ ] status 缓存（可选）
-11. [ ] 真实发奖（可选）
+2. [x] SlimApp 路由、统一 JSON、业务错误码
+3. [x] PDO 签到表读写
+4. [x] Doctrine Entity / Repository
+5. [x] 分层架构
+6. [x] GET status（每次查 MySQL）
+7. [x] POST clock-in（只记签到，不发奖）
+8. [x] 校验 / 异常 / 日志
+9. [x] Memcached 分布式锁（`Checkin\Common\Lock`，add 抢锁，CAS 释放）
+10. [x] status 每次查 MySQL。`docs/cache-problems.md` 是去掉缓存之前的笔记
+11. [x] 领奖时调用 `LoggingGiftClient`（签到在 `claim`，充值在 `RechargeService::claim`）
+12. [x] 登录、获取角色（`config/accounts.php` 是假账号）
+13. [x] 按角色、按月签到
+14. [x] 月度充值：记账、查进度、按档领取
+15. [ ] `HttpGiftClient`（可选。现在成功只表示写了 `[gift] sent`，不是游戏内到账）
+
+## 第 15 项说明（可选）
+
+`CheckinApp` 里签到和充值都 `new LoggingGiftClient()`。若要做真实发奖：
+
+1. 新增 `HttpGiftClient`，实现 `GiftGrantClientInterface::grant()`。
+2. 只改 `src/CheckinApp.php` 里的这两处 `new LoggingGiftClient()`。
+3. 接口成功表示进度已落库且发奖请求已发出，不等于游戏内一定到账。
+4. 不做消息队列和失败重试。

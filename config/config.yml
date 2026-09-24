@@ -1,0 +1,7 @@
+# SlimApp 应用配置。键必须在 CheckinConfiguration 里声明过。
+is_debug: true
+dir:
+  log: /var/www/html/var/log
+  data: /var/www/html/var/data
+  cache: /var/www/html/var/cache
+  template: /var/www/html/templates
