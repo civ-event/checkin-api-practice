@@ -22,7 +22,7 @@ class SlimAuthController
         $body = $this->body($request);
         $accessToken = $body['access_token'] ?? '';
         if (!is_string($accessToken) || trim($accessToken) === '') {
-            throw new BusinessException(ErrorCode::INVALID_PARAM, 'access_token is required');
+            throw new BusinessException(ErrorCode::INVALID_PARAMETER, 'access_token is required');
         }
 
         // 外层 {code, message, data} 由 JsonResultHandler 包
@@ -37,7 +37,7 @@ class SlimAuthController
         $body = $this->body($request);
         foreach (['access_token', 'server_id', 'role_id'] as $key) {
             if (!isset($body[$key]) || !is_string($body[$key]) || trim($body[$key]) === '') {
-                throw new BusinessException(ErrorCode::INVALID_PARAM, $key . ' is required');
+                throw new BusinessException(ErrorCode::INVALID_PARAMETER, $key . ' is required');
             }
         }
 
@@ -46,7 +46,7 @@ class SlimAuthController
             trim($body['server_id']),
             trim($body['role_id']),
         );
-        // 第二参固定为签到活动 1。充值服务自己用活动 2
+        // JWT 里仍写入活动 1。签到和累充实际用的活动 id 来自各自请求，不读这个字段。
         $token = $jwt->encode($result['user_role_primary_id'], 1);
 
         // 外层包装交给 JsonResultHandler，这里只放 token 和角色

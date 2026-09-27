@@ -7,10 +7,11 @@ namespace Checkin;
 use Checkin\Auth\JwtService;
 use Checkin\Common\Lock;
 use Checkin\Config\DailyCheckInConfig;
+use Checkin\Config\GameClock;
 use Checkin\Database\DoctrineFactory;
 use Checkin\Entities\DailyCheckInUserData;
 use Checkin\Entities\Repositories\DailyCheckInUserDataRepository;
-use Checkin\Gift\LoggingGiftClient;
+use Checkin\Gift\HttpGiftClient;
 use Checkin\Service\CheckInService;
 use Oasis\Mlib\Http\MicroKernel;
 use Oasis\SlimApp\SlimApp;
@@ -35,31 +36,35 @@ class CheckinApp extends SlimApp
             // 注入应用自身，控制器可以用 CheckinApp $app 取出容器里的服务
             $kernel->addControllerInjectedArg($this);
             // 公司风格的 Memcached 锁，控制器类型写成 Lock 即可拿到
-            $kernel->addControllerInjectedArg(new Lock($this->getService('memcached', \Memcached::class)));
+            $memcached = $this->getService('memcached', \Memcached::class);
+            $kernel->addControllerInjectedArg(new Lock($memcached));
+            $kernel->addControllerInjectedArg($memcached);
             // 本请求共用这一个 EntityManager，避免状态查询再连一次库
             $em = DoctrineFactory::createEntityManager();
             $repo = $em->getRepository(DailyCheckInUserData::class);
             assert($repo instanceof DailyCheckInUserDataRepository);
             $kernel->addControllerInjectedArg($em);
-            // 签到规则仍用原来的 CheckInService。时区是字符串，不能靠类型自动装配
+            // 签到用游戏时区。时区是字符串，不能靠类型自动装配。
+            $gameClock = new GameClock();
+            $giftClient = new HttpGiftClient(getenv('GIFT_API_URL') ?: '');
             $kernel->addControllerInjectedArg(new CheckInService(
                 $repo,
                 DailyCheckInConfig::load(),
-                getenv('APP_TIMEZONE') ?: 'Asia/Shanghai',
+                $gameClock->gameTimezone()->getName(),
                 $em,
-                new LoggingGiftClient(),
+                $giftClient,
             ));
 
-            // 充值活动固定为 2。时区同样是字符串，要显式传入
+            // 累充活动窗口用游戏时区，年月和订单月份用角色所在服务器时区。
             $kernel->addControllerInjectedArg(new RechargeService(
                 $em,
-                new LoggingGiftClient(),
-                getenv('APP_TIMEZONE') ?: 'Asia/Shanghai',
+                $giftClient,
+                $gameClock,
             ));
             // 新入口暂时仍校验旧登录接口签发的 JWT，还没换成公司的 RequestSender
             $kernel->addControllerInjectedArg(new JwtService());
             $kernel->addExtraParameters($container->getParameterBag()->all());
-            // 假账号登录。JWT 里的 role_id 仍是角色表主键，活动固定为签到活动 1
+            // 假账号登录。JWT 里的 role_id 是角色表主键，activity_id 仍写成 1，业务接口不使用它。
             $kernel->addControllerInjectedArg(new LoginService($em));
             $this->microKernel = $kernel;
         }

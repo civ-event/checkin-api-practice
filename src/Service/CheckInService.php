@@ -11,15 +11,17 @@ use Checkin\Exception\BusinessException; // 可转成 JSON 业务错误的异常
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Checkin\Gift\GiftGrantClientInterface;
-use Checkin\Config\ActivitySchedule;
+use Checkin\Gift\GiftPayload;
+use Checkin\Config\RunningActivity;
 
 /**
- * 进度键是角色主键 + 请求里的签到活动 1 + YYYYMM。
- *  clockIn 记签到并立刻发当天礼物。/claim 仍保留，给已经签过但还没领的天。
+ * 进度键是角色主键 + 请求里的活动 id + YYYYMM。活动类型必须是 monthly_daily_check_in。
+ * clockIn 先和唯一领取记录一起落库，再请求游戏服发奖。已签的天在状态里就是 claimed。
+ * 今天第一次签到不扣补签；今天已经签过再签下一档，才扣每月补签次数。
  */
 final class CheckInService // final：禁止被继承，保证业务入口单一
 {
-    /** 构造注入：仓储、活动配置、时区字符串 */
+    /** 构造注入：签到仓储、天数配置、游戏时区、EntityManager、发奖客户端。 */
     public function __construct(
         private readonly DailyCheckInUserDataRepository $repo,
         private readonly DailyCheckInConfig $config,
@@ -35,30 +37,26 @@ final class CheckInService // final：禁止被继承，保证业务入口单一
         return (int) $now->format('Ym');
     }
 
-    /** 月度签到活动。累充是 2，不要混用。 */
-    private const ACTIVITY_ID = 1;
-
-    /** 请求里的活动必须是签到 1，并且当前时间在活动窗口内。错活动或不在窗口都是 10014。 */
-    private function assertCheckInActivity(int $activityId): void
+    /**
+     * 按类型 monthly_daily_check_in 和请求里的 activity_id 查找正在进行的签到活动。
+     * 类型或 id 对不上、未开放、或不在时间窗口内，由 RunningActivity 抛 ACTIVITY_NOT_FOUND。
+     *
+     * @return array{activity_id: int, type: string, name: string, starts_at: string, ends_at: string, is_open: bool}
+     */
+    private function getRunningActivity(int $activityId): array
     {
-        if ($activityId !== self::ACTIVITY_ID) {
-            throw new BusinessException(ErrorCode::ACTIVITY_NOT_RUNNING, 'Activity is not the monthly check-in activity');
-        }
-
-        ActivitySchedule::assertRunning(self::ACTIVITY_ID, $this->timezone);
+        return RunningActivity::find('monthly_daily_check_in', $activityId, $this->timezone);
     }
 
     /**
-     * 本月能签到的最大档。开始当月从活动开始那天算第 1 档，之后的月份从 1 号算。
-     * 结果不超过配置里的总天数。
+     * 本月能签到的最大档。$startsAt 是查到的活动开始时间。
+     * 开始当月从活动开始那天算第 1 档，之后的月份从 1 号算，再和配置天数取较小值。
      */
-    private function maxAvailableDay(int $activityId): int
+    private function maxAvailableDay(string $startsAt): int
     {
-        /** @var array<int, array{starts_at: string}> $all */
-        $all = require dirname(__DIR__, 2) . '/config/activities.php';
         $tz = new \DateTimeZone($this->timezone);
         $now = new \DateTimeImmutable('now', $tz);
-        $start = new \DateTimeImmutable($all[$activityId]['starts_at'], $tz);
+        $start = new \DateTimeImmutable($startsAt, $tz);
         if ($now < $start) {
             return 0;
         }
@@ -81,20 +79,25 @@ final class CheckInService // final：禁止被继承，保证业务入口单一
      *   totalChecked: int,
      *   nextCheckDay: int|null,
      *   isCheckedToday: bool,
-     *   tiers: list<array{day: int, status: string}>
+     *   maxAvailableDay: int,
+     *   makeupLimit: int,
+     *   makeupUsed: int,
+     *   makeupRemaining: int,
+     *   tiers: list<array{day: int, status: string}>,
+     *   year_month: int
      * }
      */
     public function getStatus(int $userRolePrimaryId, int $activityId): array
     {
-        $this->assertCheckInActivity($activityId);
-        // 按角色+活动取进度；没有则内存里新建一条（尚未落库）
+        $activity = $this->getRunningActivity($activityId);
+        // 按角色 + 活动 + 当月取进度；没有则内存里新建一条，status 本身不落库
         $yearMonth = $this->currentYearMonth();
         $userData = $this->repo->findOrCreate($userRolePrimaryId, $activityId, $yearMonth);
         $checkedDays = $userData->getCheckedDays(); // 已签过的天数列表，如 [1,2]
         $next = $this->config->getNextCheckDay($checkedDays); // 下一个应签的天；全签完为 null
 
         $isCheckedToday = $userData->isCheckedToday($this->timezone);
-        $maxAvailableDay = $this->maxAvailableDay($activityId);
+        $maxAvailableDay = $this->maxAvailableDay($activity['starts_at']);
         $makeupLimit = $this->config->getMakeupCheckInLimit();
         $makeupUsed = $userData->getMakeupUsed();
         $makeupRemaining = max(0, $makeupLimit - $makeupUsed);
@@ -105,12 +108,10 @@ final class CheckInService // final：禁止被继承，保证业务入口单一
 
         $tiers = [];
         foreach ($this->config->getCheckDays() as $day) {
-            if ($userData->isDayClaimed($day)) {
-                $status = 'claimed'; // 已领奖
-            } elseif ($userData->isDayChecked($day)) {
-                $status = 'checked'; // 已签，还没领
-            } elseif ($next === $day && $nextCheckable) {
-                $status = 'checkable'; // 可以签
+            if ($userData->isDayChecked($day)) {
+                $status = 'claimed';
+            } elseif ($day === $next && $nextCheckable) {
+                $status = 'claimable';
             } else {
                 $status = 'locked';
             }
@@ -119,7 +120,6 @@ final class CheckInService // final：禁止被继承，保证业务入口单一
 
         return [
             'checkedDays' => $checkedDays,
-            'claimedDays' => $userData->getClaimedDays(),
             'totalChecked' => $userData->getTotalChecked(),
             'nextCheckDay' => $next,
             'isCheckedToday' => $isCheckedToday,
@@ -139,13 +139,18 @@ final class CheckInService // final：禁止被继承，保证业务入口单一
      *   status: string,
      *   claimedTier: int,
      *   checkedDays: list<int>,
-     *   claimedDays: list<int>,
      *   totalChecked: int,
+     *   gift: array{day: int, gift_id: int, gift_name: string},
+     *   year_month: int,
+     *   isMakeup: bool,
+     *   makeupLimit: int,
+     *   makeupUsed: int,
+     *   makeupRemaining: int
      * }
      */
     public function clockIn(int $userRolePrimaryId, int $activityId, int $checkDay): array
     {
-        $this->assertCheckInActivity($activityId);
+        $activity = $this->getRunningActivity($activityId);
         // 校验：请求的天数是否在活动配置里
         if (!$this->config->isValidCheckDay($checkDay)) {
             error_log(sprintf( // 打拒绝日志，方便排查
@@ -184,9 +189,8 @@ final class CheckInService // final：禁止被继承，保证业务入口单一
             throw new BusinessException(ErrorCode::CHECK_IN_ORDER_ERROR, 'This day is not available for check-in yet');
         }
 
-        // 校验：同一自然日只能签一次
-        // 档位不能超过活动开始至今的自然日。9 月 1 日开始、今天 9 月 24 日，7 档都已开放
-        $maxAvailableDay = $this->maxAvailableDay($activityId);
+        // 档位不能超过活动开始至今的自然日，也不能超过配置天数。例如 9 月 1 日开始、当前是 9 月 27 日，开放到第 27 档。
+        $maxAvailableDay = $this->maxAvailableDay($activity['starts_at']);
         if ($checkDay > $maxAvailableDay) {
             throw new BusinessException(ErrorCode::CHECK_IN_DAY_NOT_REACHED, 'This check-in day has not been reached yet');
         }
@@ -200,36 +204,37 @@ final class CheckInService // final：禁止被继承，保证业务入口单一
             $userData->consumeMakeup();
         }
 
-        // 线上是签到当场发奖。这里同时记已签和已领，避免同一天再走 /claim 发第二次
-        $userData->markDay($checkDay);
-        $userData->markClaimed($checkDay);
-        $this->repo->save($userData);
-
         $gift = $this->config->getGiftForDay($checkDay);
-
+        $now = time();
+        // 进度和唯一领取记录放进同一个事务。唯一索引冲突时两边都回滚。
         try {
-            // year_month 是关键字，插入键必须自带反引号
-            $this->em->getConnection()->insert('daily_check_in_gift_log', [
-                'user_role_primary_id' => $userRolePrimaryId,
-                'activity_id' => $activityId,
-                '`year_month`' => $yearMonth,
-                'check_day' => $checkDay,
-                'gift_id' => $gift['gift_id'],
-                'gift_name' => $gift['gift_name'],
-                'created_at' => time(),
-            ]);
+            $this->em->getConnection()->transactional(function () use ($userData, $userRolePrimaryId, $activityId, $yearMonth, $checkDay, $now): void {
+                $userData->markDay($checkDay);
+                $this->repo->save($userData);
+                $this->em->getConnection()->insert('monthly_daily_check_in_user_data_unique_records', [
+                    'user_role_primary_id' => $userRolePrimaryId,
+                    'activity_id' => $activityId,
+                    'year_month_num' => $yearMonth,
+                    'check_day' => $checkDay,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            });
         } catch (UniqueConstraintViolationException) {
-            throw new BusinessException(ErrorCode::ALREADY_CLAIMED, 'Already claimed this day');
+            throw new BusinessException(ErrorCode::RESOURCE_BUSY, 'The resource is busy, please retry.', 409);
         }
 
-        // 流水写入后再发奖。日志里搜 [gift] sent
-        $this->giftClient->grant($userRolePrimaryId, $activityId, $gift);
+        // 事务已提交。发奖失败不回滚。GIFT_API_URL 为空时只记日志。
+        $this->giftClient->grant(
+            $userRolePrimaryId,
+            $activityId,
+            GiftPayload::build($this->em, $userRolePrimaryId, 'sign', $gift),
+        );
 
         return [
             'status' => 'success',
             'claimedTier' => $checkDay,
             'checkedDays' => $userData->getCheckedDays(),
-            'claimedDays' => $userData->getClaimedDays(),
             'totalChecked' => $userData->getTotalChecked(),
             'gift' => $gift,
             'year_month' => $yearMonth,
@@ -237,59 +242,6 @@ final class CheckInService // final：禁止被继承，保证业务入口单一
             'makeupLimit' => $this->config->getMakeupCheckInLimit(),
             'makeupUsed' => $userData->getMakeupUsed(),
             'makeupRemaining' => max(0, $this->config->getMakeupCheckInLimit() - $userData->getMakeupUsed()),
-        ];
-    }
-    /**
-     * 领取某一天的签到奖励。必须先签过；同一天重复领返回 10008。
-     * 拒绝顺序：非法天数 → 没签(10007) → 已领(10008)。
-     */
-    public function claim(int $userRolePrimaryId, int $activityId, int $checkDay): array
-    {
-        $this->assertCheckInActivity($activityId);
-        if (!$this->config->isValidCheckDay($checkDay)) {
-            throw new BusinessException(ErrorCode::INVALID_CHECK_DAY, 'Check in invalid day');
-        }
-
-        $yearMonth = $this->currentYearMonth();
-        $userData = $this->repo->findOrCreate($userRolePrimaryId, $activityId, $yearMonth);
-
-        if (!$userData->isDayChecked($checkDay)) {
-            throw new BusinessException(ErrorCode::NOT_CHECKED, 'This day is not checked in yet');
-        }
-
-        if ($userData->isDayClaimed($checkDay)) {
-            throw new BusinessException(ErrorCode::ALREADY_CLAIMED, 'Already claimed this day');
-        }
-
-        $userData->markClaimed($checkDay);
-        $this->repo->save($userData);
-
-        $gift = $this->config->getGiftForDay($checkDay);
-
-        try {
-            // 与充值插入相同：DBAL 不转义列名，year_month 必须自带反引号，否则 1064 → 50000
-            $this->em->getConnection()->insert('daily_check_in_gift_log', [
-                'user_role_primary_id' => $userRolePrimaryId,
-                'activity_id' => $activityId,
-                '`year_month`' => $yearMonth,
-                'check_day' => $checkDay,
-                'gift_id' => $gift['gift_id'],
-                'gift_name' => $gift['gift_name'],
-                'created_at' => time(),
-            ]);
-        } catch (UniqueConstraintViolationException) {
-            throw new BusinessException(ErrorCode::ALREADY_CLAIMED, 'Already claimed this day');
-        }
-
-        // 流水已写入后再发奖。日志里搜 [gift] sent；没有这行说明没走到发奖
-        $this->giftClient->grant($userRolePrimaryId, $activityId, $gift);
-
-        return [
-            'status' => 'success',
-            'checkDay' => $checkDay,
-            'claimedDays' => $userData->getClaimedDays(),
-            'gift' => $gift,
-            'year_month' => $yearMonth,
         ];
     }
 }

@@ -76,6 +76,11 @@ final class Lock
                 ));
             }
 
+            // 上一任已经释放，key 里是 1 秒空占位。直接接手，避免紧接着的补签或领奖被这 1 秒挡住
+            if ($this->takeTombstone($storageKey, $token, $ttl)) {
+                return $token;
+            }
+
             usleep(self::RETRY_INTERVAL_US);
         } while (microtime(true) < $deadline);
 
@@ -94,6 +99,17 @@ final class Lock
         }
 
         $this->memcached->cas((float) $result['cas'], $storageKey, '', self::TOMBSTONE_TTL);
+    }
+
+    /** 空占位说明锁已释放。CAS 换成自己的 token，避免和仍在持有的人互相覆盖 */
+    private function takeTombstone(string $storageKey, string $token, int $ttl): bool
+    {
+        $result = $this->memcached->get($storageKey, null, Memcached::GET_EXTENDED);
+        if (!is_array($result) || !isset($result['value'], $result['cas']) || $result['value'] !== '') {
+            return false;
+        }
+
+        return $this->memcached->cas((float) $result['cas'], $storageKey, $token, $ttl);
     }
 
     /** 业务 key 先做校验，再哈希成固定长度，避免空格或过长 key 让 Memcached 拒绝 */

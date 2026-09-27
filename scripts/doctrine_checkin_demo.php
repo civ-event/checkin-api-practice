@@ -15,6 +15,7 @@ declare(strict_types=1); // 严格类型
  * - 批量统计 / 复杂报表再用原生 SQL
  */
 
+use Checkin\Config\GameClock;
 use Checkin\Database\DoctrineFactory; // EM 工厂
 use Checkin\Entities\DailyCheckInUserData; // 实体类
 use Checkin\Entities\Repositories\DailyCheckInUserDataRepository; // 仓储类型
@@ -24,7 +25,7 @@ require dirname(__DIR__) . '/vendor/autoload.php'; // Composer 自动加载
 $roleId = 1002; // 与 PDO demo 区分的角色
 $activityId = 1;
 $checkDay = 1;
-$timezone = getenv('APP_TIMEZONE') ?: 'Asia/Shanghai'; // 判断「今天」用
+$timezone = (new GameClock())->gameTimezone()->getName(); // 和签到一样用游戏时区判断「今天」
 
 $em = DoctrineFactory::createEntityManager(); // 创建 EntityManager
 

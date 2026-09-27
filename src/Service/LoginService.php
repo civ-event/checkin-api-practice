@@ -46,8 +46,8 @@ final class LoginService
             }
         }
         if ($matched === null) {
-            // 10010：token 有效，但 server_id + role_id 不属于这个玩家
-            throw new BusinessException(ErrorCode::ROLE_NOT_OWNED, 'Role does not belong to this player', 400);
+            // token 有效，但这个 server_id + role_id 不在该玩家的角色列表里。
+            throw new BusinessException(ErrorCode::ROLE_NOT_FOUND, 'Role does not belong to this player', 404);
         }
 
         $conn = $this->em->getConnection();
@@ -103,7 +103,8 @@ final class LoginService
         $accounts = require dirname(__DIR__, 2) . '/config/accounts.php';
 
         if (!isset($accounts[$accessToken])) {
-            throw new BusinessException(ErrorCode::INVALID_ACCESS_TOKEN, 'Invalid access token', 401);
+            // 假账号表里没有这个 access_token，按未登录处理。
+            throw new BusinessException(ErrorCode::UNAUTHORIZED, 'Invalid access token', 401);
         }
 
         return $accounts[$accessToken];

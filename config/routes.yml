@@ -31,34 +31,27 @@ slim_json:
   defaults:
     _controller: SlimHealthController::jsonAction
 
-# 月度签到状态。需要旧登录接口签发的 Bearer token
+# 月度签到状态。需要 /auth/login 签发的 Bearer token
 slim_checkin_status:
   path: /check-in/status
   defaults:
     _controller: SlimCheckInController::statusAction
 
-# 只打卡。今天已经签过时，业务会拒绝，目前仍是 Symfony 的 500 HTML
+# 打卡并发奖。今天已签过再签下一档会扣补签次数，次数用完是 MAKEUP_LIMIT_EXCEEDED。
 slim_checkin_clock_in:
   path: /check-in/clock-in
   methods: [POST]
   defaults:
     _controller: SlimCheckInController::clockInAction
 
-# 领取某一天。必须已签且未领
-slim_checkin_claim:
-  path: /check-in/claim
-  methods: [POST]
-  defaults:
-    _controller: SlimCheckInController::claimAction
-
-# 月度累充状态。成功时正文就是数据本身，没有包 {code,message,data}
+# 月度累充状态。成功时由 JsonResultHandler 包成 {code, message, data}。
 slim_recharge_status:
   path: /recharge/status
   methods: [GET]
   defaults:
     _controller: SlimRechargeController::statusAction
 
-# 练习假入账
+# 按 mock_payments 重算当月金额。请求里的 amount 不累加。
 slim_recharge_record:
   path: /recharge/record
   methods: [POST]
@@ -112,12 +105,6 @@ slim_checkin_clock_in_legacy:
   methods: [POST]
   defaults:
     _controller: SlimCheckInController::clockInAction
-
-slim_checkin_claim_legacy:
-  path: /api-front/activity/check-in/claim
-  methods: [POST]
-  defaults:
-    _controller: SlimCheckInController::claimAction
 
 slim_recharge_status_legacy:
   path: /api-front/activity/recharge/status

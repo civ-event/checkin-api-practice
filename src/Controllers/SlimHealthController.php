@@ -4,91 +4,61 @@ declare(strict_types=1);
 
 namespace Checkin\Controllers;
 
-use Checkin\Auth\JwtService;
-use Checkin\Common\ErrorCode;
 use Checkin\Common\Lock;
-use Checkin\Exception\BusinessException;
-use Checkin\Service\CheckInService;
-use Symfony\Component\HttpFoundation\Request;
-use Throwable;
+use Doctrine\ORM\EntityManagerInterface;
+use Memcached;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
- * 新内核上的月度签到。身份仍用旧登录接口签发的 JWT。
- * role_id 是角色表主键。clock-in 只记签到，领奖走 claim。
- * 两处写操作共用锁 check_in:{角色主键}:{活动}:{YYYYMM}。
+ * 内核探活。这些接口不走登录。
+ * 返回 Response 的原样输出；返回数组的由 JsonResultHandler 包成 JSON。
  */
-class SlimCheckInController
+class SlimHealthController
 {
-    /** GET /front.php/check-in/status 每次查 MySQL */
-    public function statusAction(Request $request, CheckInService $checkInService, JwtService $jwt): array
+    /** 正文是纯文本 slimapp ok */
+    public function healthAction(): Response
     {
-        [$roleId, $activityId] = $this->resolveContext($request, $jwt);
-
-        return $checkInService->getStatus($roleId, $activityId);
+        return $this->text('slimapp ok');
     }
 
-    /** POST /front.php/check-in/clock-in 只打卡，不发奖 */
-    public function clockInAction(Request $request, CheckInService $checkInService, JwtService $jwt, Lock $lock): array
+    /** 确认 services.yml 里的 Memcached 客户端能读到 stats */
+    public function memcachedAction(Memcached $memcached): Response
     {
-        [$roleId, $activityId] = $this->resolveContext($request, $jwt);
-        $checkDay = $this->readCheckDay($request);
-        $yearMonth = $checkInService->currentYearMonth();
-        // 等待时间 0：抢不到立刻失败，不在接口里空转
-        $lockKey = sprintf('check_in:%d:%d:%d', $roleId, $activityId, $yearMonth);
-
-        return $lock->memcachedLock(
-            fn(): array => $checkInService->clockIn($roleId, $activityId, $checkDay),
-            $lockKey,
-            30,
-            0.0,
-        );
-    }
-
-    /** POST /front.php/check-in/claim 这一天必须已签且未领，成功后才会打出 [gift] sent */
-    public function claimAction(Request $request, CheckInService $checkInService, JwtService $jwt, Lock $lock): array
-    {
-        [$roleId, $activityId] = $this->resolveContext($request, $jwt);
-        $checkDay = $this->readCheckDay($request);
-        $yearMonth = $checkInService->currentYearMonth();
-        $lockKey = sprintf('check_in:%d:%d:%d', $roleId, $activityId, $yearMonth);
-
-        return $lock->memcachedLock(
-            fn(): array => $checkInService->claim($roleId, $activityId, $checkDay),
-            $lockKey,
-            30,
-            0.0,
-        );
-    }
-
-    /**
-     * 从 Authorization: Bearer 取出角色主键和活动 id。
-     *
-     * @return array{0: int, 1: int}
-     */
-    private function resolveContext(Request $request, JwtService $jwt): array
-    {
-        $header = (string) $request->headers->get('Authorization', '');
-        if (!preg_match('/^Bearer\s+(\S+)$/i', $header, $matches)) {
-            throw new BusinessException(ErrorCode::MISSING_CONTEXT, 'Authorization Bearer token is required', 401);
+        $stats = $memcached->getStats();
+        if (!is_array($stats) || $stats === []) {
+            return $this->text('memcached fail', 500);
         }
 
-        try {
-            $claims = $jwt->decode($matches[1]);
-        } catch (Throwable) {
-            throw new BusinessException(ErrorCode::MISSING_CONTEXT, 'Invalid or expired token', 401);
-        }
-
-        return [$claims['role_id'], $claims['activity_id']];
+        return $this->text('memcached ok');
     }
 
-    /** 新内核没有 Slim 的 JSON body 解析，要自己读原始正文 */
-    private function readCheckDay(Request $request): int
+    /** 抢一把探测锁再释放 */
+    public function lockAction(Lock $lock): Response
     {
-        $body = json_decode($request->getContent(), true);
-        if (!is_array($body) || !isset($body['check_day']) || !is_numeric($body['check_day'])) {
-            throw new BusinessException(ErrorCode::INVALID_PARAM, 'check_day is required and must be int');
+        $lock->memcachedLock(static fn(): null => null, 'health:lock', 5, 0.0);
+
+        return $this->text('lock ok');
+    }
+
+    /** SELECT 1，确认 Doctrine 连上 MySQL */
+    public function dbAction(EntityManagerInterface $em): Response
+    {
+        $value = $em->getConnection()->fetchOne('SELECT 1');
+        if ((string) $value !== '1') {
+            return $this->text('db fail', 500);
         }
 
-        return (int) $body['check_day'];
+        return $this->text('db ok');
+    }
+
+    /** 数组返回值会被 JsonResultHandler 编成 JSON */
+    public function jsonAction(): array
+    {
+        return ['ok' => true];
+    }
+
+    private function text(string $body, int $status = 200): Response
+    {
+        return new Response($body, $status, ['Content-Type' => 'text/plain; charset=UTF-8']);
     }
 }

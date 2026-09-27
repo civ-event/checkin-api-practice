@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 return [
-    // 与 RechargeService::ACTIVITY_ID 保持一致。签到活动是 1，不要改成同一个
+    // 这里只放档位礼物。正在进行的活动 id 来自请求和 config/activities.php。
     'activity_id' => 2,
     'tiers' => [
         100 => ['threshold' => 100, 'gift_id' => 2001, 'gift_name' => '充值礼包*100'],

@@ -5,53 +5,55 @@ declare(strict_types=1);
 namespace Checkin\Service;
 
 use Checkin\Common\ErrorCode;
+use Checkin\Config\GameClock;
 use Checkin\Exception\BusinessException;
 use Checkin\Gift\GiftGrantClientInterface;
+use Checkin\Gift\GiftPayload;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
-use Checkin\Config\ActivitySchedule;
+use Checkin\Config\RunningActivity;
 
 /**
- * 月度累计充值。进度按角色主键 + 活动 2 + YYYYMM 一行。
- * 登录 JWT 里的 activity_id 固定是签到活动 1，这里不用它，避免和签到进度写到同一条。
- * 当月金额以 config/mock_payments.php 的订单合计为准，客户端上报的金额不累加；线上金额来自支付同步，不由客户端上报。
+ * 月度累计充值。进度按角色主键 + 请求里的活动 id + YYYYMM 一行。
+ * 活动 id 来自请求，类型必须是 monthly_cumulative_recharge，对不上是 ACTIVITY_NOT_FOUND。
+ * 活动窗口用游戏时区。年月和订单月份用角色所在服务器时区。
+ * 登录 JWT 里的 activity_id 固定是签到活动，这里不用它。
+ * 当月金额以 config/mock_payments.php 的订单 send_time 合计为准，客户端上报的金额不累加。
+ * 领奖先和唯一领取记录一起落库，再请求游戏服。发奖失败不回滚。
  */
 final class RechargeService
 {
-    /** 与 config/recharge.php 的 activity_id 一致；签到活动是 1 */
-    private const ACTIVITY_ID = 2;
-
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly GiftGrantClientInterface $giftClient,
-        private readonly string $timezone,
+        private readonly GameClock $clock,
     ) {}
 
-    /** 服务器时区的 YYYYMM，例如 202609。换月后是另一行，进度自然重置。 */
-    public function currentYearMonth(): int
+    /** 角色所在服务器时区下的 YYYYMM。换月后是另一行，进度自然重置。 */
+    public function currentYearMonth(int $userRolePrimaryId): int
     {
-        $now = new \DateTimeImmutable('now', new \DateTimeZone($this->timezone));
+        $now = new \DateTimeImmutable('now', $this->serverTimezoneForRole($userRolePrimaryId));
 
         return (int) $now->format('Ym');
     }
 
-    /** 请求必须带 activity_id，只接受 2，并且当前时间在活动窗口内。错活动或不在窗口都是 10014。 */
-    private function assertRechargeActivity(int $activityId): void
+    /** 请求里的活动必须是正在进行的 monthly_cumulative_recharge，否则 ACTIVITY_NOT_FOUND。窗口按游戏时区。 */
+    private function assertRechargeActivity(int $activityId): array
     {
-        if ($activityId !== self::ACTIVITY_ID) {
-            throw new BusinessException(ErrorCode::ACTIVITY_NOT_RUNNING, 'Activity is not the monthly recharge activity');
-        }
-
-        ActivitySchedule::assertRunning(self::ACTIVITY_ID, $this->timezone);
+        return RunningActivity::find(
+            'monthly_cumulative_recharge',
+            $activityId,
+            $this->clock->gameTimezone()->getName(),
+        );
     }
 
     /** @return array{year_month: int, totalAmount: int, tiers: list<array{threshold: int, status: string, gift_id: int, gift_name: string}>} */
     public function getStatus(int $userRolePrimaryId, int $activityId): array
     {
         $this->assertRechargeActivity($activityId);
-        $this->applyMockTotal($userRolePrimaryId);
-        $yearMonth = $this->currentYearMonth();
-        $row = $this->findOrCreate($userRolePrimaryId, $yearMonth);
+        $this->applyMockTotal($userRolePrimaryId, $activityId);
+        $yearMonth = $this->currentYearMonth($userRolePrimaryId);
+        $row = $this->findOrCreate($userRolePrimaryId, $activityId, $yearMonth);
         $claimed = $this->claimedTiers($row['claimed_tiers']);
         $total = (int) $row['total_amount'];
 
@@ -84,11 +86,12 @@ final class RechargeService
     public function record(int $userRolePrimaryId, int $activityId, int $amount): array
     {
         if ($amount < 1) {
-            throw new BusinessException(ErrorCode::INVALID_PARAM, 'amount must be a positive int');
+            throw new BusinessException(ErrorCode::INVALID_PARAMETER, 'amount must be a positive int');
         }
 
         $this->assertRechargeActivity($activityId);
-        $this->applyMockTotal($userRolePrimaryId);
+        // amount 只做正整数校验，不写入 total_amount。当月金额按 mock 流水覆盖。
+        $this->applyMockTotal($userRolePrimaryId, $activityId);
 
         return $this->getStatus($userRolePrimaryId, $activityId);
     }
@@ -101,35 +104,55 @@ final class RechargeService
         }
 
         $this->assertRechargeActivity($activityId);
-        $this->applyMockTotal($userRolePrimaryId);
-        $yearMonth = $this->currentYearMonth();
-        $row = $this->findOrCreate($userRolePrimaryId, $yearMonth);
+        $this->applyMockTotal($userRolePrimaryId, $activityId);
+        $yearMonth = $this->currentYearMonth($userRolePrimaryId);
+        $row = $this->findOrCreate($userRolePrimaryId, $activityId, $yearMonth);
         $claimed = $this->claimedTiers($row['claimed_tiers']);
 
-        // 先看金额再看是否已领：未达标是 10012，达标但领过是 10013
+        // 先看金额再看是否已领：没达到是 RECHARGE_NOT_REACHED，达到但领过是 REWARD_ALREADY_CLAIMED。
         if ((int) $row['total_amount'] < $threshold) {
             throw new BusinessException(ErrorCode::RECHARGE_NOT_REACHED, 'Recharge amount not reached');
         }
         if (in_array($threshold, $claimed, true)) {
-            throw new BusinessException(ErrorCode::RECHARGE_ALREADY_CLAIMED, 'Recharge reward already claimed');
+            throw new BusinessException(ErrorCode::REWARD_ALREADY_CLAIMED, 'Recharge reward already claimed');
         }
 
         $claimed[] = $threshold;
         sort($claimed);
         $now = time();
-
-        $this->em->getConnection()->update('monthly_recharge_user_data', [
-            'claimed_tiers' => json_encode(array_values($claimed), JSON_THROW_ON_ERROR),
-            'updated_at' => $now,
-        ], ['id' => $row['id']]);
-
-        // day 在充值里表示门槛金额，不是签到天数。先落库再发奖：发奖失败时库里已是已领
+        $rewardId = 'tier_' . $threshold;
         $gift = [
             'day' => $threshold,
             'gift_id' => $tier['gift_id'],
             'gift_name' => $tier['gift_name'],
         ];
-        $this->giftClient->grant($userRolePrimaryId, self::ACTIVITY_ID, $gift);
+
+        // 已领档位和唯一领取记录放进同一个事务。唯一索引冲突时两边都回滚。
+        try {
+            $this->em->getConnection()->transactional(function () use ($row, $claimed, $now, $userRolePrimaryId, $activityId, $yearMonth, $rewardId): void {
+                $this->em->getConnection()->update('monthly_recharge_user_data', [
+                    'claimed_tiers' => json_encode(array_values($claimed), JSON_THROW_ON_ERROR),
+                    'updated_at' => $now,
+                ], ['id' => $row['id']]);
+                $this->em->getConnection()->insert('monthly_cumulative_recharge_user_data_unique_records', [
+                    'user_role_primary_id' => $userRolePrimaryId,
+                    'activity_id' => $activityId,
+                    'year_month_num' => $yearMonth,
+                    'reward_id' => $rewardId,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            });
+        } catch (UniqueConstraintViolationException) {
+            throw new BusinessException(ErrorCode::RESOURCE_BUSY, 'The resource is busy, please retry.', 409);
+        }
+
+        // 事务已提交。发奖失败不回滚。rewardType 与线上累充一致。
+        $this->giftClient->grant(
+            $userRolePrimaryId,
+            $activityId,
+            GiftPayload::build($this->em, $userRolePrimaryId, 'recharge', $gift),
+        );
 
         return [
             'status' => 'success',
@@ -142,12 +165,12 @@ final class RechargeService
         ];
     }
 
-    /** 用假支付流水覆盖当月 total_amount。同一角色同一月反复调用结果相同 */
-    private function applyMockTotal(int $userRolePrimaryId): void
+    /** 用假支付流水覆盖当月 total_amount。月份按角色服务器时区。同一份 mock 下反复调用得到同一合计。 */
+    private function applyMockTotal(int $userRolePrimaryId, int $activityId): void
     {
-        $yearMonth = $this->currentYearMonth();
+        $yearMonth = $this->currentYearMonth($userRolePrimaryId);
         $total = $this->mockTotal($userRolePrimaryId, $yearMonth);
-        $row = $this->findOrCreate($userRolePrimaryId, $yearMonth);
+        $row = $this->findOrCreate($userRolePrimaryId, $activityId, $yearMonth);
         if ((int) $row['total_amount'] === $total) {
             return;
         }
@@ -158,17 +181,23 @@ final class RechargeService
         ], ['id' => $row['id']]);
     }
 
-    /** 只加总 paid_at 落在当前 YYYYMM 的订单 */
+    /** 只加总 send_time 落在当前服务器时区 YYYYMM 的订单。流水按游戏 role_id 配置，不按本地自增主键。 */
     private function mockTotal(int $userRolePrimaryId, int $yearMonth): int
     {
-        /** @var array<int, list<array{order_id: string, amount: int, paid_at: string}>> $all */
+        $role = $this->em->getConnection()->fetchAssociative(
+            'SELECT role_id, server_id FROM activity_user_role WHERE id = ?',
+            [$userRolePrimaryId],
+        );
+        $roleId = is_array($role) ? ($role['role_id'] ?? null) : null;
+        $serverId = is_array($role) && is_string($role['server_id'] ?? null) ? $role['server_id'] : '';
+        /** @var array<string, list<array{order_id: string, amount: int, send_time: int}>> $all */
         $all = require dirname(__DIR__, 2) . '/config/mock_payments.php';
-        $orders = $all[$userRolePrimaryId] ?? [];
-        $tz = new \DateTimeZone($this->timezone);
+        $orders = is_string($roleId) ? ($all[$roleId] ?? []) : [];
+        $serverTz = $this->clock->serverTimezone($serverId);
         $sum = 0;
         foreach ($orders as $order) {
-            $paid = new \DateTimeImmutable($order['paid_at'], $tz);
-            if ((int) $paid->format('Ym') !== $yearMonth) {
+            $send = (new \DateTimeImmutable('@' . $order['send_time']))->setTimezone($serverTz);
+            if ((int) $send->format('Ym') !== $yearMonth) {
                 continue;
             }
             $sum += (int) $order['amount'];
@@ -177,13 +206,23 @@ final class RechargeService
         return $sum;
     }
 
+    private function serverTimezoneForRole(int $userRolePrimaryId): \DateTimeZone
+    {
+        $serverId = $this->em->getConnection()->fetchOne(
+            'SELECT server_id FROM activity_user_role WHERE id = ?',
+            [$userRolePrimaryId],
+        );
+
+        return $this->clock->serverTimezone(is_string($serverId) ? $serverId : '');
+    }
+
     /** @return array{id: int|string, total_amount: int|string, claimed_tiers: string} */
-    private function findOrCreate(int $userRolePrimaryId, int $yearMonth): array
+    private function findOrCreate(int $userRolePrimaryId, int $activityId, int $yearMonth): array
     {
         $conn = $this->em->getConnection();
         $row = $conn->fetchAssociative(
             'SELECT id, total_amount, claimed_tiers FROM monthly_recharge_user_data WHERE user_role_primary_id = ? AND activity_id = ? AND `year_month` = ?',
-            [$userRolePrimaryId, self::ACTIVITY_ID, $yearMonth],
+            [$userRolePrimaryId, $activityId, $yearMonth],
         );
         if ($row !== false) {
             return $row;
@@ -192,10 +231,10 @@ final class RechargeService
         $now = time();
         try {
             // DBAL 的 insert() 不给列名加引号。year_month 是 MySQL 关键字，
-            // 键必须自带反引号，否则 1064，接口包成 50000。SELECT 里同理。
+            // 键必须自带反引号，否则 SQL 1064，错误处理器会包成 INTERNAL_ERROR。SELECT 里同理。
             $conn->insert('monthly_recharge_user_data', [
                 'user_role_primary_id' => $userRolePrimaryId,
-                'activity_id' => self::ACTIVITY_ID,
+                'activity_id' => $activityId,
                 '`year_month`' => $yearMonth,
                 'total_amount' => 0,
                 'claimed_tiers' => '[]',
@@ -205,7 +244,7 @@ final class RechargeService
         } catch (UniqueConstraintViolationException) {
             $row = $conn->fetchAssociative(
                 'SELECT id, total_amount, claimed_tiers FROM monthly_recharge_user_data WHERE user_role_primary_id = ? AND activity_id = ? AND `year_month` = ?',
-                [$userRolePrimaryId, self::ACTIVITY_ID, $yearMonth],
+                [$userRolePrimaryId, $activityId, $yearMonth],
             );
             if ($row === false) {
                 throw new \RuntimeException('monthly recharge row missing after conflict');

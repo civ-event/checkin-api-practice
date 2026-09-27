@@ -23,14 +23,15 @@ final class LoginContext
     public static function fromRequest(Request $request, JwtService $jwt): self
     {
         $header = (string) $request->headers->get('Authorization', '');
+        // 没带 Bearer，或后面验签失败，都是未登录。HTTP 401。
         if (!preg_match('/^Bearer\s+(\S+)$/i', $header, $matches)) {
-            throw new BusinessException(ErrorCode::MISSING_CONTEXT, 'Authorization Bearer token is required', 401);
+            throw new BusinessException(ErrorCode::UNAUTHORIZED, 'Authorization Bearer token is required', 401);
         }
 
         try {
             $claims = $jwt->decode($matches[1]);
         } catch (Throwable) {
-            throw new BusinessException(ErrorCode::MISSING_CONTEXT, 'Invalid or expired token', 401);
+            throw new BusinessException(ErrorCode::UNAUTHORIZED, 'Invalid or expired token', 401);
         }
 
         return new self($claims['role_id'], $claims['activity_id']);

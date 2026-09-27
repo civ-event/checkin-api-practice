@@ -12,7 +12,7 @@ final class DailyCheckInConfig
 {
     /**
      * @param array<int, array{day: int, gift_id: int, gift_name: string}> $days
-     *        key 为签到天（1~7），value 为该天礼物
+     *        key 为签到天（当前配置是 1～31），value 为该天礼物
      */
     public function __construct(
         private readonly array $days,

@@ -1,26 +1,38 @@
-<?php // PHP 起始
+<?php
 
-declare(strict_types=1); // 严格类型
+declare(strict_types=1);
 
 /**
- * 签到活动模板（学习用，代替 YAML 配置文件）。
- * DailyCheckInConfig::load() 会 require 本文件。
+ * 月度签到档位。天数和补签次数对齐线上 monthlyCheckIn/mislen-2025-12.yml：31 天，每月 3 次。
+ * DailyCheckInConfig::load() 会 require 本文件。逻辑看 days 的 key，不看 max_day。
  *
  * @return array{
+ *   makeup_check_in_limit: int,
  *   max_day: int,
  *   days: array<int, array{day: int, gift_id: int, gift_name: string}>
  * }
  */
+$gifts = [
+    1 => '钻*200*4',
+    2 => '糖果*10*Item_GetCE_10',
+    3 => '金戒指*2*gift1',
+    4 => '仙灵瓶*3*Item_Token_Gacha_Universal',
+    5 => '鲜花项链*5*gift3',
+    6 => '相遇之石碎片*1*Item_Piece_Hero_Universal',
+    7 => '低级魔药*2*Item_Hero_Attribute_Increase_1',
+];
+
+$days = [];
+for ($day = 1; $day <= 31; $day++) {
+    $days[$day] = [
+        'day' => $day,
+        'gift_id' => 1000 + $day,
+        'gift_name' => $gifts[(($day - 1) % 7) + 1],
+    ];
+}
+
 return [
-    'makeup_check_in_limit' => 1, // 每月补签次数。0 表示今天签过后不能再签
-    'max_day' => 7, // 活动最长签到天数（文档用；逻辑主要看 days 的 key）
-    'days' => [ // key = 签到天序号；value = 该天礼物
-        1 => ['day' => 1, 'gift_id' => 1001, 'gift_name' => '金币*100'], // 第 1 天
-        2 => ['day' => 2, 'gift_id' => 1002, 'gift_name' => '金币*200'], // 第 2 天
-        3 => ['day' => 3, 'gift_id' => 1003, 'gift_name' => '钻石*10'], // 第 3 天
-        4 => ['day' => 4, 'gift_id' => 1004, 'gift_name' => '金币*300'], // 第 4 天
-        5 => ['day' => 5, 'gift_id' => 1005, 'gift_name' => '钻石*20'], // 第 5 天
-        6 => ['day' => 6, 'gift_id' => 1006, 'gift_name' => '金币*500'], // 第 6 天
-        7 => ['day' => 7, 'gift_id' => 1007, 'gift_name' => '大奖宝箱'], // 第 7 天大奖
-    ],
+    'makeup_check_in_limit' => 3,
+    'max_day' => 31,
+    'days' => $days,
 ];

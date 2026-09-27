@@ -26,7 +26,7 @@ final class JwtService
 
     /**
      * role_id 必须是 activity_user_role.id，不是游戏侧角色字符串。
-     * 过期、签名不对会在 decode 抛异常，中间件收成 10004。
+     * 过期、签名不对会在 decode 抛异常，LoginContext 收成 UNAUTHORIZED。
      */
     public function encode(int $roleId, int $activityId): string
 

@@ -59,21 +59,12 @@ curl -s http://localhost:18080/api-front/activity/recharge/status \
 4. [x] Doctrine Entity / Repository
 5. [x] 分层架构
 6. [x] GET status（每次查 MySQL）
-7. [x] POST clock-in（只记签到，不发奖）
+7. [x] POST clock-in（记签到；已签的天状态是 claimed）
 8. [x] 校验 / 异常 / 日志
 9. [x] Memcached 分布式锁（`Checkin\Common\Lock`，add 抢锁，CAS 释放）
 10. [x] status 每次查 MySQL。`docs/cache-problems.md` 是去掉缓存之前的笔记
-11. [x] 领奖时调用 `LoggingGiftClient`（签到在 `claim`，充值在 `RechargeService::claim`）
+11. [x] 发奖先写唯一领取记录，再由 `HttpGiftClient` 请求游戏服（签到在 `clockIn`，充值在 `RechargeService::claim`）
 12. [x] 登录、获取角色（`config/accounts.php` 是假账号）
 13. [x] 按角色、按月签到
 14. [x] 月度充值：记账、查进度、按档领取
-15. [ ] `HttpGiftClient`（可选。现在成功只表示写了 `[gift] sent`，不是游戏内到账）
-
-## 第 15 项说明（可选）
-
-`CheckinApp` 里签到和充值都 `new LoggingGiftClient()`。若要做真实发奖：
-
-1. 新增 `HttpGiftClient`，实现 `GiftGrantClientInterface::grant()`。
-2. 只改 `src/CheckinApp.php` 里的这两处 `new LoggingGiftClient()`。
-3. 接口成功表示进度已落库且发奖请求已发出，不等于游戏内一定到账。
-4. 不做消息队列和失败重试。
+15. [x] `HttpGiftClient`。`GIFT_API_URL` 为空时只记日志；有地址时 POST 游戏服。成功表示领取记录已落库且请求已发出，不等于游戏内一定到账。发奖失败不回滚进度。
