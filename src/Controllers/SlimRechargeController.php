@@ -56,12 +56,24 @@ class SlimRechargeController
 
     private function readInt(Request $request, string $field, string $message): int
     {
-        $body = json_decode($request->getContent(), true);
-        if (!is_array($body) || !isset($body[$field]) || !is_numeric($body[$field])) {
+        $value = $this->params($request)[$field] ?? null;
+        if (!is_numeric($value)) {
             throw new BusinessException(ErrorCode::INVALID_PARAMETER, $message);
         }
 
-        return (int) $body[$field];
+        return (int) $value;
+    }
+
+    /** @return array<string, mixed> */
+    private function params(Request $request): array
+    {
+        $json = json_decode($request->getContent(), true);
+        $params = is_array($json) ? $json : [];
+        foreach ($request->request->all() as $key => $value) {
+            $params[$key] = $value;
+        }
+
+        return $params;
     }
 
     private function readQueryInt(Request $request, string $field, string $message): int

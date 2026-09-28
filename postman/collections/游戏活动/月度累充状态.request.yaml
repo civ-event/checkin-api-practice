@@ -1,0 +1,8 @@
+$kind: http-request
+url: http://localhost:18080/api-front/activity/monthly-cumulative-recharge/status?activity_id=2
+method: GET
+headers:
+  activity-user-token: "{{json_web_token_05wl}}"
+queryParams:
+  activity_id: "2"
+order: 4497008092535323

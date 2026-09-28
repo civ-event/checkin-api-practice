@@ -1,0 +1,10 @@
+$kind: http-request
+url: http://localhost:18080/api-auth/activity/join
+method: POST
+body:
+  type: urlencoded
+  content:
+    accessToken: token-player-1001
+    roleId: r200
+    serverId: s2
+order: 3450892673176488

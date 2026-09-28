@@ -84,7 +84,7 @@ final class CheckInService // final：禁止被继承，保证业务入口单一
      *   makeupUsed: int,
      *   makeupRemaining: int,
      *   tiers: list<array{day: int, status: string}>,
-     *   year_month: int
+     *   yearMonth: int
      * }
      */
     public function getStatus(int $userRolePrimaryId, int $activityId): array
@@ -119,6 +119,7 @@ final class CheckInService // final：禁止被继承，保证业务入口单一
         }
 
         return [
+            'yearMonth' => $yearMonth,
             'checkedDays' => $checkedDays,
             'totalChecked' => $userData->getTotalChecked(),
             'nextCheckDay' => $next,
@@ -128,7 +129,6 @@ final class CheckInService // final：禁止被继承，保证业务入口单一
             'makeupUsed' => $makeupUsed,
             'makeupRemaining' => $makeupRemaining,
             'tiers' => $tiers,
-            'year_month' => $yearMonth,
         ];
     }
 
@@ -138,11 +138,10 @@ final class CheckInService // final：禁止被继承，保证业务入口单一
      * @return array{
      *   status: string,
      *   claimedTier: int,
+     *   isMakeup: bool,
+     *   yearMonth: int,
      *   checkedDays: list<int>,
      *   totalChecked: int,
-     *   gift: array{day: int, gift_id: int, gift_name: string},
-     *   year_month: int,
-     *   isMakeup: bool,
      *   makeupLimit: int,
      *   makeupUsed: int,
      *   makeupRemaining: int
@@ -234,11 +233,10 @@ final class CheckInService // final：禁止被继承，保证业务入口单一
         return [
             'status' => 'success',
             'claimedTier' => $checkDay,
+            'isMakeup' => $isMakeup,
+            'yearMonth' => $yearMonth,
             'checkedDays' => $userData->getCheckedDays(),
             'totalChecked' => $userData->getTotalChecked(),
-            'gift' => $gift,
-            'year_month' => $yearMonth,
-            'isMakeup' => $isMakeup,
             'makeupLimit' => $this->config->getMakeupCheckInLimit(),
             'makeupUsed' => $userData->getMakeupUsed(),
             'makeupRemaining' => max(0, $this->config->getMakeupCheckInLimit() - $userData->getMakeupUsed()),

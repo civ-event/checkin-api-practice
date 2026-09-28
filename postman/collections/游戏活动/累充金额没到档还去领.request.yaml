@@ -1,0 +1,11 @@
+$kind: http-request
+url: http://localhost:18080/api-front/activity/monthly-cumulative-recharge/claim
+method: POST
+headers:
+  activity-user-token: "{{json_web_token_05wl}}"
+body:
+  type: urlencoded
+  content:
+    activity_id: "2"
+    threshold: "800"
+order: 4503461845955241

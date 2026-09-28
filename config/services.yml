@@ -38,7 +38,7 @@ services:
     class: Checkin\Http\JsonResultHandler
     public: true
 
-  # 把 BusinessException 收成 {code, message, data}，不要再出 Symfony HTML
+  # 把异常收成 {code, exception:{type, message}}，不要再出 Symfony HTML
   slim_error_handler:
     class: Checkin\Http\SlimJsonErrorHandler
     public: true

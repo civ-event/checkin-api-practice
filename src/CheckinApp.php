@@ -20,7 +20,8 @@ use Checkin\Service\LoginService;
 
 /**
  * 公司 SlimApp 的练习入口。
- * 旧的 Slim 4 仍走 public/index.php；这个类只服务 public/front.php。
+ * public/index.php 和 public/front.php 都加载这个类。
+ * index.php 处理 /api-front、/api-auth 这些完整路径；front.php 处理脚本名后面的短路径。
  * 控制器要的对象必须在这里 addControllerInjectedArg，内核只按具体类注入，接口类型对不上。
  */
 class CheckinApp extends SlimApp

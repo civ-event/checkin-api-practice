@@ -19,19 +19,33 @@ final class LoginService
         private readonly EntityManagerInterface $em,
     ) {}
 
-    /** @return list<array{server_id: string, role_id: string, role_name: string}> */
+    /** @return list<array{role_id: string, role_name: string, role_level: int, server_id: string, server_name: string}> */
     public function roles(string $accessToken): array
     {
-        return $this->account($accessToken)['roles'];
+        $roles = [];
+        foreach ($this->account($accessToken)['roles'] as $role) {
+            $roles[] = [
+                'role_id' => $role['role_id'],
+                'role_name' => $role['role_name'],
+                'role_level' => $role['role_level'],
+                'server_id' => $role['server_id'],
+                'server_name' => $role['server_name'],
+            ];
+        }
+
+        return $roles;
     }
 
     /**
      * @return array{
      *   user_role_primary_id: int,
      *   player_id: string,
+     *   username: string,
      *   server_id: string,
+     *   server_name: string,
      *   role_id: string,
-     *   role_name: string
+     *   role_name: string,
+     *   role_level: int
      * }
      */
     public function login(string $accessToken, string $serverId, string $roleId): array
@@ -90,16 +104,19 @@ final class LoginService
         return [
             'user_role_primary_id' => $userRolePrimaryId,
             'player_id' => $account['player_id'],
+            'username' => $account['username'],
             'server_id' => $serverId,
+            'server_name' => $matched['server_name'],
             'role_id' => $roleId,
             'role_name' => $matched['role_name'],
+            'role_level' => $matched['role_level'],
         ];
     }
 
-    /** @return array{player_id: string, roles: list<array{server_id: string, role_id: string, role_name: string}>} */
+    /** @return array{player_id: string, username: string, roles: list<array{role_id: string, role_name: string, role_level: int, server_id: string, server_name: string}>} */
     private function account(string $accessToken): array
     {
-        /** @var array<string, array{player_id: string, roles: list<array{server_id: string, role_id: string, role_name: string}>}> $accounts */
+        /** @var array<string, array{player_id: string, username: string, roles: list<array{role_id: string, role_name: string, role_level: int, server_id: string, server_name: string}>}> $accounts */
         $accounts = require dirname(__DIR__, 2) . '/config/accounts.php';
 
         if (!isset($accounts[$accessToken])) {

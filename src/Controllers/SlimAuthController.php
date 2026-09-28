@@ -11,57 +11,68 @@ use Checkin\Service\LoginService;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
- * 新内核上的假登录。字段仍是 access_token、server_id、role_id。
- * 成功数组由 JsonResultHandler 包装，本类只返回 data 里的内容。，和旧登录一样，后面取 data.token 不用改。
+ * 假登录。入参与前端一致：accessToken、roleId、serverId。
+ * 成功体由 JsonResultHandler 原样输出，后面取 activityUserToken。
  */
 class SlimAuthController
 {
-    /** POST /front.php/auth/roles 按假 access_token 列出角色 */
+    /** POST /api-auth/activity/get-user-role-list 按假 accessToken 列出角色 */
     public function rolesAction(Request $request, LoginService $loginService): array
     {
-        $body = $this->body($request);
-        $accessToken = $body['access_token'] ?? '';
-        if (!is_string($accessToken) || trim($accessToken) === '') {
-            throw new BusinessException(ErrorCode::INVALID_PARAMETER, 'access_token is required');
-        }
+        $accessToken = $this->requiredString($request, 'accessToken');
 
-        // 外层 {code, message, data} 由 JsonResultHandler 包
         return [
-            'roles' => $loginService->roles(trim($accessToken)),
+            'roles' => $loginService->roles($accessToken),
         ];
     }
 
-    /** POST /front.php/auth/login 校验角色属于该玩家，再签发签到活动 1 的 JWT */
+    /** POST /api-auth/activity/join 校验角色属于该玩家，再签发活动 token */
     public function loginAction(Request $request, LoginService $loginService, JwtService $jwt): array
     {
-        $body = $this->body($request);
-        foreach (['access_token', 'server_id', 'role_id'] as $key) {
-            if (!isset($body[$key]) || !is_string($body[$key]) || trim($body[$key]) === '') {
-                throw new BusinessException(ErrorCode::INVALID_PARAMETER, $key . ' is required');
-            }
-        }
+        $accessToken = $this->requiredString($request, 'accessToken');
+        $roleId = $this->requiredString($request, 'roleId');
+        $serverId = $this->requiredString($request, 'serverId');
 
-        $result = $loginService->login(
-            trim($body['access_token']),
-            trim($body['server_id']),
-            trim($body['role_id']),
-        );
+        $result = $loginService->login($accessToken, $serverId, $roleId);
         // JWT 里仍写入活动 1。签到和累充实际用的活动 id 来自各自请求，不读这个字段。
         $token = $jwt->encode($result['user_role_primary_id'], 1);
 
-        // 外层包装交给 JsonResultHandler，这里只放 token 和角色
         return [
-            'token' => $token,
-            'expires_in' => (int) (getenv('JWT_TTL') ?: 3600),
-            'role' => $result,
+            'user_info' => [
+                'player_id' => $result['player_id'],
+                'username' => $result['username'],
+            ],
+            'active_user_role' => [
+                'role_id' => $result['role_id'],
+                'role_name' => $result['role_name'],
+                'role_level' => $result['role_level'],
+                'server_id' => $result['server_id'],
+                'server_name' => $result['server_name'],
+            ],
+            'roles' => $loginService->roles($accessToken),
+            'activityUserToken' => $token,
         ];
     }
 
-    /** @return array<string, mixed> */
-    private function body(Request $request): array
+    private function requiredString(Request $request, string $field): string
     {
-        $body = json_decode($request->getContent(), true);
+        $value = $this->params($request)[$field] ?? '';
+        if (!is_string($value) || trim($value) === '') {
+            throw new BusinessException(ErrorCode::INVALID_PARAMETER, $field . ' is required');
+        }
 
-        return is_array($body) ? $body : [];
+        return trim($value);
+    }
+
+    /** @return array<string, mixed> */
+    private function params(Request $request): array
+    {
+        $json = json_decode($request->getContent(), true);
+        $params = is_array($json) ? $json : [];
+        foreach ($request->request->all() as $key => $value) {
+            $params[$key] = $value;
+        }
+
+        return $params;
     }
 }

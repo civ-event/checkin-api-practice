@@ -46,15 +46,10 @@ class SlimCheckInController
         );
     }
 
-    /** 新内核没有 Slim 的 JSON body 解析，要自己读原始正文 */
+    /** form 或 JSON 里的整数。前端打卡用 form。 */
     private function readCheckDay(Request $request): int
     {
-        $body = json_decode($request->getContent(), true);
-        if (!is_array($body) || !isset($body['check_day']) || !is_numeric($body['check_day'])) {
-            throw new BusinessException(ErrorCode::INVALID_PARAMETER, 'check_day is required and must be int');
-        }
-
-        return (int) $body['check_day'];
+        return $this->readBodyInt($request, 'check_day', 'check_day is required and must be int');
     }
 
     private function readQueryInt(Request $request, string $field, string $message): int
@@ -69,11 +64,23 @@ class SlimCheckInController
 
     private function readBodyInt(Request $request, string $field, string $message): int
     {
-        $body = json_decode($request->getContent(), true);
-        if (!is_array($body) || !isset($body[$field]) || !is_numeric($body[$field])) {
+        $value = $this->params($request)[$field] ?? null;
+        if (!is_numeric($value)) {
             throw new BusinessException(ErrorCode::INVALID_PARAMETER, $message);
         }
 
-        return (int) $body[$field];
+        return (int) $value;
+    }
+
+    /** @return array<string, mixed> */
+    private function params(Request $request): array
+    {
+        $json = json_decode($request->getContent(), true);
+        $params = is_array($json) ? $json : [];
+        foreach ($request->request->all() as $key => $value) {
+            $params[$key] = $value;
+        }
+
+        return $params;
     }
 }

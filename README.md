@@ -14,41 +14,36 @@ curl -s http://localhost:18080/
 
 `curl /` 的正文是纯文本 `slimapp ok`。默认端口是 `18080`。
 
-`pdo_migrate.php` 只给空库用，它只执行 `scripts/sql/001`。本机库如果已经导入过 `002`–`005`，不要再执行。
+`pdo_migrate.php` 按文件名执行 `scripts/sql` 下的全部脚本。已经记入 `schema_migrations` 的会跳过，所以可以重复执行。
 
 ## 常用验收
 
-角色乙登录。JWT 里的 `role_id` 是 `user_role_primary_id`（角色表主键），不是游戏角色字符串 `r200`。
+角色乙登录。JWT 里的 `role_id` 是角色表主键，不是游戏角色字符串 `r200`。响应里的 token 字段是 `activityUserToken`。
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:18080/api-front/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"access_token":"token-player-1001","server_id":"s2","role_id":"r200"}' \
-  | php -r 'echo json_decode(stream_get_contents(STDIN))->data->token;')
+TOKEN=$(curl -s -X POST http://localhost:18080/api-auth/activity/join \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'accessToken=token-player-1001&serverId=s2&roleId=r200' \
+  | php -r 'echo json_decode(stream_get_contents(STDIN))->activityUserToken;')
 ```
 
-成功和业务错误都是 `{code, message, data}`。`code` 为 `0` 表示成功。签到进度在 `data` 里。打卡成功没有礼物；领奖成功才有 `gift_id`。发奖日志在 `docker compose logs app` 里搜 `[gift] sent`。
+成功响应没有 `{code, message, data}`，正文就是接口数据。错误是 `{code, exception}`。发奖日志在 `docker compose logs app` 里搜 `[gift] sent`。
 
 ```bash
-curl -s http://localhost:18080/api-front/activity/check-in/status \
-  -H "Authorization: Bearer $TOKEN"
+curl -s 'http://localhost:18080/api-front/activity/monthly-check-in/status?activity_id=1' \
+  -H "activity-user-token: $TOKEN"
 
-curl -s -X POST http://localhost:18080/api-front/activity/check-in/clock-in \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"check_day":1}'
-
-curl -s -X POST http://localhost:18080/api-front/activity/check-in/claim \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"check_day":1}'
+curl -s -X POST http://localhost:18080/api-front/activity/monthly-check-in/clock-in \
+  -H "activity-user-token: $TOKEN" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'activity_id=1&check_day=1'
 ```
 
-充值活动 id 在 `RechargeService` 里固定为 `2`，不读 JWT 里的签到活动 `1`。`/record` 是练习用的假入账。
+累充活动 id 来自请求，类型必须是 `monthly_cumulative_recharge`。`/api-front/activity/recharge/record` 是练习用的假入账，前端没有这个地址。
 
 ```bash
-curl -s http://localhost:18080/api-front/activity/recharge/status \
-  -H "Authorization: Bearer $TOKEN"
+curl -s 'http://localhost:18080/api-front/activity/monthly-cumulative-recharge/status?activity_id=2' \
+  -H "activity-user-token: $TOKEN"
 ```
 
 ## 学习进度

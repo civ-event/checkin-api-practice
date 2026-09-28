@@ -31,7 +31,7 @@ slim_json:
   defaults:
     _controller: SlimHealthController::jsonAction
 
-# 月度签到状态。需要 /auth/login 签发的 Bearer token
+# 月度签到状态。需要 join 签发的 activity-user-token
 slim_checkin_status:
   path: /check-in/status
   defaults:
@@ -44,7 +44,7 @@ slim_checkin_clock_in:
   defaults:
     _controller: SlimCheckInController::clockInAction
 
-# 月度累充状态。成功时由 JsonResultHandler 包成 {code, message, data}。
+# 月度累充状态。成功时由 JsonResultHandler 原样输出 JSON。
 slim_recharge_status:
   path: /recharge/status
   methods: [GET]
@@ -72,15 +72,15 @@ slim_auth_roles:
   defaults:
     _controller: SlimAuthController::rolesAction
 
-# 登录。role.user_role_primary_id 才是后面接口用的角色主键
+# 登录。JWT 里的 role_id 是角色表主键，响应字段是 activityUserToken
 slim_auth_login:
   path: /auth/login
   methods: [POST]
   defaults:
     _controller: SlimAuthController::loginAction
 
-# 下面这些 path 与旧 Slim 4 的地址相同，控制器仍是新内核里的那几个。
-# 现在用 /front.php 前缀验证。index.php 等这些地址都通了再换。
+# 下面这些是前端现在用的完整路径，Nginx 回退到 index.php 后按原路径匹配。
+# 控制器和上面的短路径是同一批。/front.php 后面只接短路径，例如 /front.php/check-in/status。
 
 slim_auth_roles_legacy:
   path: /api-front/auth/roles
@@ -120,6 +120,44 @@ slim_recharge_record_legacy:
 
 slim_recharge_claim_legacy:
   path: /api-front/activity/recharge/claim
+  methods: [POST]
+  defaults:
+    _controller: SlimRechargeController::claimAction
+
+# 与前端路径一致。控制器和上面的旧地址是同一批。
+
+slim_auth_roles_client:
+  path: /api-auth/activity/get-user-role-list
+  methods: [POST]
+  defaults:
+    _controller: SlimAuthController::rolesAction
+
+slim_auth_join_client:
+  path: /api-auth/activity/join
+  methods: [POST]
+  defaults:
+    _controller: SlimAuthController::loginAction
+
+slim_checkin_status_client:
+  path: /api-front/activity/monthly-check-in/status
+  methods: [GET]
+  defaults:
+    _controller: SlimCheckInController::statusAction
+
+slim_checkin_clock_in_client:
+  path: /api-front/activity/monthly-check-in/clock-in
+  methods: [POST]
+  defaults:
+    _controller: SlimCheckInController::clockInAction
+
+slim_recharge_status_client:
+  path: /api-front/activity/monthly-cumulative-recharge/status
+  methods: [GET]
+  defaults:
+    _controller: SlimRechargeController::statusAction
+
+slim_recharge_claim_client:
+  path: /api-front/activity/monthly-cumulative-recharge/claim
   methods: [POST]
   defaults:
     _controller: SlimRechargeController::claimAction

@@ -22,19 +22,22 @@ $roleId = 1001; // 演示用角色 ID
 $activityId = 1; // 演示用活动 ID
 $checkDay = 1; // 要签的天
 $now = time(); // 当前时间戳，写入 created/updated/last_check
+// 进度键含年月。与签到服务一样用游戏时区 Etc/GMT+5
+$yearMonth = (int) (new DateTimeImmutable('now', new DateTimeZone('Etc/GMT+5')))->format('Ym');
 
 $pdo = pdo_connect(); // 拿到已配置的 PDO
 
-// 1) 预处理查询：占位符 :role_id / :activity_id，防注入
+// 1) 预处理查询：占位符防注入。一行进度是角色 + 活动 + 年月
 $select = $pdo->prepare(
-    'SELECT id, user_role_primary_id, activity_id, checked_days, total_checked, last_check_time
+    'SELECT id, user_role_primary_id, activity_id, `year_month`, checked_days, total_checked, last_check_time
      FROM daily_check_in_user_data
-     WHERE user_role_primary_id = :role_id AND activity_id = :activity_id
+     WHERE user_role_primary_id = :role_id AND activity_id = :activity_id AND `year_month` = :year_month
      LIMIT 1'
 );
 $select->execute([ // 绑定参数并执行
     ':role_id' => $roleId,
     ':activity_id' => $activityId,
+    ':year_month' => $yearMonth,
 ]);
 $row = $select->fetch(); // 取一行关联数组；没有则为 false
 
@@ -42,22 +45,24 @@ if ($row === false) {
     // 2) 无记录则 INSERT（checked_days 先空数组 JSON）
     $insert = $pdo->prepare(
         'INSERT INTO daily_check_in_user_data
-            (user_role_primary_id, activity_id, checked_days, total_checked, last_check_time, created_at, updated_at)
+            (user_role_primary_id, activity_id, `year_month`, checked_days, total_checked, last_check_time, created_at, updated_at)
          VALUES
-            (:role_id, :activity_id, :checked_days, 0, 0, :created_at, :updated_at)'
+            (:role_id, :activity_id, :year_month, :checked_days, 0, 0, :created_at, :updated_at)'
     );
     $insert->execute([
         ':role_id' => $roleId,
         ':activity_id' => $activityId,
+        ':year_month' => $yearMonth,
         ':checked_days' => '[]', // JSON 空数组字符串
         ':created_at' => $now,
         ':updated_at' => $now,
     ]);
-    echo "inserted empty progress for role={$roleId} activity={$activityId}\n";
+    echo "inserted empty progress for role={$roleId} activity={$activityId} year_month={$yearMonth}\n";
 
     $select->execute([ // 插入后再查一遍拿到 id
         ':role_id' => $roleId,
         ':activity_id' => $activityId,
+        ':year_month' => $yearMonth,
     ]);
     $row = $select->fetch();
 }
@@ -110,6 +115,7 @@ if (in_array($checkDay, $checkedDays, true)) {
 $select->execute([
     ':role_id' => $roleId,
     ':activity_id' => $activityId,
+    ':year_month' => $yearMonth,
 ]);
 $final = $select->fetch();
 echo json_encode($final, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . PHP_EOL; // 漂亮打印

@@ -8,7 +8,8 @@ declare(strict_types=1); // 严格类型
  *   docker compose exec app composer update
  *   docker compose exec app php scripts/doctrine_checkin_demo.php
  *
- * 使用 role=1002，避免与 PDO 演示的 role=1001 数据互相干扰。
+ * 使用 role=1002、当月 year_month，避免与 PDO 演示的 role=1001 数据互相干扰。
+ * findOrCreate 的三个参数是角色主键、活动 id、年月。
  *
  * 笔记：
  * - 主路径（单条用户进度 CRUD）用 ORM
@@ -26,13 +27,14 @@ $roleId = 1002; // 与 PDO demo 区分的角色
 $activityId = 1;
 $checkDay = 1;
 $timezone = (new GameClock())->gameTimezone()->getName(); // 和签到一样用游戏时区判断「今天」
+$yearMonth = (int) (new DateTimeImmutable('now', new DateTimeZone($timezone)))->format('Ym');
 
 $em = DoctrineFactory::createEntityManager(); // 创建 EntityManager
 
 /** @var DailyCheckInUserDataRepository $repo */
 $repo = $em->getRepository(DailyCheckInUserData::class); // 取自定义仓储
 
-$userData = $repo->findOrCreate($roleId, $activityId); // 查或内存新建
+$userData = $repo->findOrCreate($roleId, $activityId, $yearMonth); // 按角色+活动+年月查，没有则内存新建
 
 if ($userData->isDayChecked($checkDay)) {
     echo "day {$checkDay} already checked via ORM\n"; // 已签
@@ -47,7 +49,7 @@ $em->clear();
 
 /** @var DailyCheckInUserDataRepository $repo */
 $repo = $em->getRepository(DailyCheckInUserData::class); // clear 后需重新取
-$reloaded = $repo->findOrCreate($roleId, $activityId); // 应从 DB 加载
+$reloaded = $repo->findOrCreate($roleId, $activityId, $yearMonth); // 应从 DB 加载当月这一行
 
 echo json_encode([ // 打印关键字段便于人工核对
     'id' => $reloaded->getId(),

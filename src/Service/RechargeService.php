@@ -47,7 +47,7 @@ final class RechargeService
         );
     }
 
-    /** @return array{year_month: int, totalAmount: int, tiers: list<array{threshold: int, status: string, gift_id: int, gift_name: string}>} */
+    /** @return array{yearMonth: int, totalRechargeGoods: int, roundEndAt: int, tiers: list<array{threshold: int, reached: bool, status: string}>} */
     public function getStatus(int $userRolePrimaryId, int $activityId): array
     {
         $this->assertRechargeActivity($activityId);
@@ -70,15 +70,15 @@ final class RechargeService
             }
             $tiers[] = [
                 'threshold' => $threshold,
+                'reached' => $total >= $threshold,
                 'status' => $status,
-                'gift_id' => $tier['gift_id'],
-                'gift_name' => $tier['gift_name'],
             ];
         }
 
         return [
-            'year_month' => $yearMonth,
-            'totalAmount' => $total,
+            'yearMonth' => $yearMonth,
+            'totalRechargeGoods' => $total,
+            'roundEndAt' => $this->roundEndAt($userRolePrimaryId),
             'tiers' => $tiers,
         ];
     }
@@ -156,12 +156,10 @@ final class RechargeService
 
         return [
             'status' => 'success',
-            'year_month' => $yearMonth,
             'threshold' => $threshold,
-            'gift' => [
-                'gift_id' => $tier['gift_id'],
-                'gift_name' => $tier['gift_name'],
-            ],
+            'claimedTier' => $threshold,
+            'yearMonth' => $yearMonth,
+            'claimedTiers' => array_map(static fn (int $tier): string => 'tier_' . $tier, $claimed),
         ];
     }
 
@@ -204,6 +202,16 @@ final class RechargeService
         }
 
         return $sum;
+    }
+
+    /** 下个自然月 1 号 00:00:00（角色所在服务器时区）的 Unix 秒。 */
+    private function roundEndAt(int $userRolePrimaryId): int
+    {
+        $nextMonthStart = (new \DateTimeImmutable('now', $this->serverTimezoneForRole($userRolePrimaryId)))
+            ->modify('first day of next month')
+            ->setTime(0, 0, 0);
+
+        return $nextMonthStart->getTimestamp();
     }
 
     private function serverTimezoneForRole(int $userRolePrimaryId): \DateTimeZone

@@ -1,0 +1,8 @@
+$kind: http-request
+url: http://localhost:18080/api-auth/activity/get-user-role-list
+method: POST
+body:
+  type: urlencoded
+  content:
+    accessToken: token-player-1001
+order: 3264616578507819
