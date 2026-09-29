@@ -28,13 +28,9 @@ class DailyCheckInUserData
     #[ORM\Column(name: '`year_month`', type: 'integer')]
     private int $yearMonth = 0;
 
-    /** @var list<int> 已签天数，JSON 存库 */
+    /** @var list<int> 已签天数。打卡即发奖，状态里的 claimed 也看这一列 */
     #[ORM\Column(name: 'checked_days', type: 'json')]
     private array $checkedDays = [];
-
-    /** @var list<int> 已领奖天数，JSON 存库 */
-    #[ORM\Column(name: 'claimed_days', type: 'json')]
-    private array $claimedDays = [];
 
     #[ORM\Column(name: 'total_checked', type: 'integer', options: ['default' => 0])]
     private int $totalChecked = 0; // 已签天数个数（冗余字段，方便查询）
@@ -98,18 +94,6 @@ class DailyCheckInUserData
     {
         return $this->checkedDays; // 返回已签列表副本语义上是内部数组引用，学习项目可接受
     }
-
-    /** @return list<int> */
-    public function getClaimedDays(): array
-    {
-        return $this->claimedDays;
-    }
-
-    public function isDayClaimed(int $checkDay): bool
-    {
-        return in_array($checkDay, $this->claimedDays, true);
-    }
-
 
     public function getTotalChecked(): int
     {
@@ -200,17 +184,6 @@ class DailyCheckInUserData
             $now = time();
             $this->lastCheckTime = $now; // 记录本次签到时刻
             $this->updatedAt = $now;
-        }
-
-        return $this;
-    }
-    public function markClaimed(int $checkDay): static
-    {
-        if (!$this->isDayClaimed($checkDay)) {
-            $this->claimedDays[] = $checkDay;
-            sort($this->claimedDays);
-            $this->claimedDays = array_values($this->claimedDays);
-            $this->updatedAt = time();
         }
 
         return $this;

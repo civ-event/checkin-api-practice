@@ -1,5 +1,6 @@
--- 签到领奖记录。进度表增加已领天数，并用礼物日志保证同一天只能领一次。
--- 现在的打卡把记进度和发奖放在同一次请求里，发奖是否重复以 007 的唯一领取表为准。
+-- 签到领奖记录。礼物日志保证同一天只能领一次。
+-- claimed_days 曾加在进度表上，010_drop_claimed_days.sql 已删除。打卡即发奖，进度只看 checked_days。
+-- 发奖是否重复以 007 的唯一领取表为准。
 
 ALTER TABLE daily_check_in_user_data
   ADD COLUMN claimed_days JSON NOT NULL DEFAULT (JSON_ARRAY()) COMMENT '已领奖天数，如 [1,2]' AFTER checked_days;
