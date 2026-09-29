@@ -28,7 +28,7 @@ class SlimRechargeController
         return $rechargeService->getStatus($roleId, $activityId);
     }
 
-    /** POST /front.php/recharge/record amount 只校验为正整数，不累加。当月金额按 mock_payments 覆盖。 */
+    /** POST /front.php/recharge/record 记一笔订单，再按当月订单重算累充合计。 */
     public function recordAction(Request $request, RechargeService $rechargeService, JwtService $jwt, Lock $lock): array
     {
         $roleId = $this->roleId($request, $jwt);

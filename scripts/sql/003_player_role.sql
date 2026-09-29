@@ -1,3 +1,6 @@
+-- 登录落库的玩家和角色。activity_user 按 player_id 一人一行。
+-- activity_user_role.id 是后面 JWT、签到和累充使用的角色主键，不是游戏角色号 r100、r200。
+
 CREATE TABLE IF NOT EXISTS activity_user (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     player_id VARCHAR(64) NOT NULL,

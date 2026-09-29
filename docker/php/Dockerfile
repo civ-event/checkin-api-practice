@@ -8,6 +8,7 @@ COPY docker/php/ext-src/memcached-3.4.0.tar.gz /tmp/memcached.tar.gz
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git \
+        libfaketime \
         openssh-client \
         unzip \
         libzip-dev \

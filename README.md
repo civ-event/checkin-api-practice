@@ -39,7 +39,7 @@ curl -s -X POST http://localhost:18080/api-front/activity/monthly-check-in/clock
   -d 'activity_id=1&check_day=1'
 ```
 
-累充活动 id 来自请求，类型必须是 `monthly_cumulative_recharge`。`/api-front/activity/recharge/record` 是练习用的假入账，前端没有这个地址。
+累充活动 id 来自请求，类型必须是 `monthly_cumulative_recharge`。`/api-front/activity/recharge/record` 是练习用的充值入账，前端没有这个地址。它把一笔订单写入 `recharge_payment_orders`，再按当月订单重算累充合计。`config/mock_payments.php` 只导入一次，作为初始订单。
 
 ```bash
 curl -s 'http://localhost:18080/api-front/activity/monthly-cumulative-recharge/status?activity_id=2' \

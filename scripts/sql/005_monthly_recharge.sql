@@ -1,3 +1,6 @@
+-- 月度累充进度。一行是某个角色、某个累充活动、某个月的合计金额和已领档位。
+-- total_amount 由 recharge_payment_orders 当月订单重算后写入。claimed_tiers 例如 [100,300]。
+
 CREATE TABLE IF NOT EXISTS monthly_recharge_user_data (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     user_role_primary_id BIGINT UNSIGNED NOT NULL,

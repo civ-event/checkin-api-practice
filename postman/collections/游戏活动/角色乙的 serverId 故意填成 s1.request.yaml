@@ -6,5 +6,5 @@ body:
   content:
     accessToken: token-player-1001
     roleId: r200
-    serverId: s1
+    serverId: s4
 order: 4503371073141431

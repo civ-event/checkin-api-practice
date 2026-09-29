@@ -2,11 +2,11 @@ $kind: http-request
 url: http://localhost:18080/api-front/activity/recharge/record
 method: POST
 headers:
-  activity-user-token: "{{json_web_token_05wl}}"
+  activity-user-token: "{{activityUserToken}}"
   Content-Type: application/x-www-form-urlencoded
 body:
   type: urlencoded
   content:
     activity_id: "2"
-    amount: "1"
+    amount: "100"
 order: 4498657646451267

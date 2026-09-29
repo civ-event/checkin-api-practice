@@ -2,7 +2,7 @@ $kind: http-request
 url: http://localhost:18080/api-front/activity/monthly-check-in/status?activity_id=1
 method: GET
 headers:
-  activity-user-token: "{{json_web_token_05wl}}"
+  activity-user-token: "{{activityUserToken}}"
 queryParams:
   activity_id: "1"
 order: 4419680733450876

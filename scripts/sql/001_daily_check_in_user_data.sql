@@ -1,4 +1,5 @@
--- 签到进度表（学习用，对齐 daily_check_in 语义）
+-- 月度签到进度表。一行是某个角色在某个活动下的签到记录。
+-- 后续 004 给它加上 year_month，006 加上本月已用补签次数。
 -- IF NOT EXISTS：重复执行迁移不会因表已存在而失败
 CREATE TABLE IF NOT EXISTS daily_check_in_user_data (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,                         -- 自增主键

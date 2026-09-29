@@ -16,6 +16,10 @@ services:
     build:
       context: . # 以项目根为构建上下文
       dockerfile: docker/php/Dockerfile # PHP 镜像定义
+    environment:
+      LD_PRELOAD: /usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1
+      FAKETIME: "@2026-10-10 17:00:00"
+      DONT_FAKE_MONOTONIC: "1"
     volumes:
       - ./:/var/www/html # 代码可写挂载（改代码即时生效）
     env_file:

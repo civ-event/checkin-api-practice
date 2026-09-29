@@ -2,7 +2,7 @@ $kind: http-request
 url: http://localhost:18080/api-front/activity/monthly-cumulative-recharge/claim
 method: POST
 headers:
-  activity-user-token: "{{json_web_token_05wl}}"
+  activity-user-token: "{{activityUserToken}}"
 body:
   type: urlencoded
   content:

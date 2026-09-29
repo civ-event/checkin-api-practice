@@ -1,0 +1,5 @@
+name: 活动用户token
+values:
+  - key: activityUserToken
+    secret: true
+color: 120

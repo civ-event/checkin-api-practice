@@ -5,6 +5,6 @@ body:
   type: urlencoded
   content:
     accessToken: token-player-1001
-    roleId: r200
-    serverId: s2
+    roleId: r400
+    serverId: s4
 order: 3450892673176488

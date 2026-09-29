@@ -1,3 +1,6 @@
+-- 签到改为按月一条进度。唯一键从「角色 + 活动」改成「角色 + 活动 + YYYYMM」，换月自动新开一轮。
+-- year_month 是 MySQL 关键字，语句里必须加反引号。
+
 ALTER TABLE daily_check_in_user_data
   ADD COLUMN `year_month` INT NOT NULL DEFAULT 202609 COMMENT '年月 YYYYMM' AFTER activity_id;
 

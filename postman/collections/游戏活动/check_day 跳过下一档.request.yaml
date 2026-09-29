@@ -2,10 +2,10 @@ $kind: http-request
 url: http://localhost:18080/api-front/activity/monthly-check-in/clock-in
 method: POST
 headers:
-  activity-user-token: "{{json_web_token_05wl}}"
+  activity-user-token: "{{activityUserToken}}"
 body:
   type: urlencoded
   content:
     activity_id: "1"
-    check_day: "7"
+    check_day: "3"
 order: 4502281968123016

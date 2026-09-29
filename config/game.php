@@ -12,7 +12,9 @@ declare(strict_types=1);
 return [
     'timezone' => 'Etc/GMT+5',
     'servers' => [
-        's1' => 'Asia/Shanghai',
-        's2' => 'Etc/GMT+5',
+        's1' => 'Etc/GMT+5',
+        's2' => 'Asia/Shanghai',
+        's3' => 'Asia/Shanghai',
+        's4' => 'Etc/GMT+5',
     ],
 ];

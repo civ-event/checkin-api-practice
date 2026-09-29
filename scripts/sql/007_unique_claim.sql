@@ -1,3 +1,6 @@
+-- 签到和累充的唯一领取表。和进度写在同一个事务里，挡住并发下的第二次领取。
+-- 签到的唯一键是角色 + 活动 + 月份 + 天数。累充的唯一键是角色 + 活动 + 月份 + 档位，例如 tier_500。
+
 CREATE TABLE IF NOT EXISTS monthly_daily_check_in_user_data_unique_records (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     user_role_primary_id BIGINT UNSIGNED NOT NULL,

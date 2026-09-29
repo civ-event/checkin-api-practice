@@ -18,7 +18,7 @@ use Checkin\Config\RunningActivity;
  * 活动 id 来自请求，类型必须是 monthly_cumulative_recharge，对不上是 ACTIVITY_NOT_FOUND。
  * 活动窗口用游戏时区。年月和订单月份用角色所在服务器时区。
  * 登录 JWT 里的 activity_id 固定是签到活动，这里不用它。
- * 当月金额以 config/mock_payments.php 的订单 send_time 合计为准，客户端上报的金额不累加。
+ * 当月金额是 recharge_payment_orders 里落在当月的订单合计。mock_payments.php 只导入一次作为初始订单。
  * 领奖先和唯一领取记录一起落库，再请求游戏服。发奖失败不回滚。
  */
 final class RechargeService
@@ -51,9 +51,8 @@ final class RechargeService
     public function getStatus(int $userRolePrimaryId, int $activityId): array
     {
         $this->assertRechargeActivity($activityId);
-        $this->applyMockTotal($userRolePrimaryId, $activityId);
+        $row = $this->syncMonthTotal($userRolePrimaryId, $activityId);
         $yearMonth = $this->currentYearMonth($userRolePrimaryId);
-        $row = $this->findOrCreate($userRolePrimaryId, $activityId, $yearMonth);
         $claimed = $this->claimedTiers($row['claimed_tiers']);
         $total = (int) $row['total_amount'];
 
@@ -90,8 +89,7 @@ final class RechargeService
         }
 
         $this->assertRechargeActivity($activityId);
-        // amount 只做正整数校验，不写入 total_amount。当月金额按 mock 流水覆盖。
-        $this->applyMockTotal($userRolePrimaryId, $activityId);
+        $this->insertClientOrder($userRolePrimaryId, $amount);
 
         return $this->getStatus($userRolePrimaryId, $activityId);
     }
@@ -104,9 +102,8 @@ final class RechargeService
         }
 
         $this->assertRechargeActivity($activityId);
-        $this->applyMockTotal($userRolePrimaryId, $activityId);
+        $row = $this->syncMonthTotal($userRolePrimaryId, $activityId);
         $yearMonth = $this->currentYearMonth($userRolePrimaryId);
-        $row = $this->findOrCreate($userRolePrimaryId, $activityId, $yearMonth);
         $claimed = $this->claimedTiers($row['claimed_tiers']);
 
         // 先看金额再看是否已领：没达到是 RECHARGE_NOT_REACHED，达到但领过是 REWARD_ALREADY_CLAIMED。
@@ -163,37 +160,76 @@ final class RechargeService
         ];
     }
 
-    /** 用假支付流水覆盖当月 total_amount。月份按角色服务器时区。同一份 mock 下反复调用得到同一合计。 */
-    private function applyMockTotal(int $userRolePrimaryId, int $activityId): void
+    /**
+     * 初始订单导入一次，再按订单表重算当月 total_amount。
+     *
+     * @return array{id: int|string, total_amount: int|string, claimed_tiers: string}
+     */
+    private function syncMonthTotal(int $userRolePrimaryId, int $activityId): array
     {
+        $role = $this->gameRole($userRolePrimaryId);
+        $this->ensureSeedOrders($role['role_id']);
         $yearMonth = $this->currentYearMonth($userRolePrimaryId);
-        $total = $this->mockTotal($userRolePrimaryId, $yearMonth);
+        $total = $this->orderTotal($role['role_id'], $role['server_id'], $yearMonth);
         $row = $this->findOrCreate($userRolePrimaryId, $activityId, $yearMonth);
         if ((int) $row['total_amount'] === $total) {
-            return;
+            return $row;
         }
 
         $this->em->getConnection()->update('monthly_recharge_user_data', [
             'total_amount' => $total,
             'updated_at' => time(),
         ], ['id' => $row['id']]);
+        $row['total_amount'] = $total;
+
+        return $row;
     }
 
-    /** 只加总 send_time 落在当前服务器时区 YYYYMM 的订单。流水按游戏 role_id 配置，不按本地自增主键。 */
-    private function mockTotal(int $userRolePrimaryId, int $yearMonth): int
+    /** 记一笔客户端充值。支付时间用当前时间，所以落在角色服务器时区的当月。 */
+    private function insertClientOrder(int $userRolePrimaryId, int $amount): void
     {
-        $role = $this->em->getConnection()->fetchAssociative(
-            'SELECT role_id, server_id FROM activity_user_role WHERE id = ?',
-            [$userRolePrimaryId],
-        );
-        $roleId = is_array($role) ? ($role['role_id'] ?? null) : null;
-        $serverId = is_array($role) && is_string($role['server_id'] ?? null) ? $role['server_id'] : '';
+        $role = $this->gameRole($userRolePrimaryId);
+        $now = time();
+        $this->em->getConnection()->insert('recharge_payment_orders', [
+            'role_id' => $role['role_id'],
+            'order_id' => 'client-' . $now . '-' . bin2hex(random_bytes(3)),
+            'amount' => $amount,
+            'send_time' => $now,
+            'created_at' => $now,
+        ]);
+    }
+
+    /** mock_payments.php 只作为初始订单。同一角色的同一个订单号已经存在时不再插入。 */
+    private function ensureSeedOrders(string $roleId): void
+    {
         /** @var array<string, list<array{order_id: string, amount: int, send_time: int}>> $all */
         $all = require dirname(__DIR__, 2) . '/config/mock_payments.php';
-        $orders = is_string($roleId) ? ($all[$roleId] ?? []) : [];
+        $orders = $all[$roleId] ?? [];
+        $now = time();
+        foreach ($orders as $order) {
+            $this->em->getConnection()->executeStatement(
+                'INSERT IGNORE INTO recharge_payment_orders (role_id, order_id, amount, send_time, created_at) VALUES (?, ?, ?, ?, ?)',
+                [$roleId, $order['order_id'], $order['amount'], $order['send_time'], $now],
+            );
+        }
+    }
+
+    /** 同一角色、同一个订单号只加一次。重复同步到的订单不会把金额算两遍。 */
+    private function orderTotal(string $roleId, string $serverId, int $yearMonth): int
+    {
+        /** @var list<array{id: int|string, order_id: string, amount: int|string, send_time: int|string}> $orders */
+        $orders = $this->em->getConnection()->fetchAllAssociative(
+            'SELECT id, order_id, amount, send_time FROM recharge_payment_orders WHERE role_id = ? ORDER BY id',
+            [$roleId],
+        );
         $serverTz = $this->clock->serverTimezone($serverId);
+        $seen = [];
         $sum = 0;
         foreach ($orders as $order) {
+            if (isset($seen[$order['order_id']])) {
+                continue;
+            }
+            $seen[$order['order_id']] = true;
             $send = (new \DateTimeImmutable('@' . $order['send_time']))->setTimezone($serverTz);
             if ((int) $send->format('Ym') !== $yearMonth) {
                 continue;
@@ -202,6 +238,19 @@ final class RechargeService
         }
 
         return $sum;
+    }
+
+    /** @return array{role_id: string, server_id: string} */
+    private function gameRole(int $userRolePrimaryId): array
+    {
+        $role = $this->em->getConnection()->fetchAssociative(
+            'SELECT role_id, server_id FROM activity_user_role WHERE id = ?',
+            [$userRolePrimaryId],
+        );
+        $roleId = is_array($role) && is_string($role['role_id'] ?? null) ? $role['role_id'] : '';
+        $serverId = is_array($role) && is_string($role['server_id'] ?? null) ? $role['server_id'] : '';
+
+        return ['role_id' => $roleId, 'server_id' => $serverId];
     }
 
     /** 下个自然月 1 号 00:00:00（角色所在服务器时区）的 Unix 秒。 */
