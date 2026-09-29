@@ -11,7 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * 内核探活。这些接口不走登录。
- * 返回 Response 的原样输出；返回数组的由 JsonResultHandler 包成 JSON。
+ * 返回 Response 的原样输出；返回数组的由 JsonResultHandler 原样编成 JSON。
  */
 class SlimHealthController
 {

@@ -1,5 +1,6 @@
-# 这些 path 是去掉入口脚本名之后的 PATH_INFO。
-# 浏览器或 curl 要写 /front.php/memcached，路由里只写 /memcached。直接写 /front.php 会对不上，变成 404。
+# 这些 path 是 PATH_INFO。
+# Nginx 把 /memcached 以及 /api-front、/api-auth 交给 index.php，路由按原路径匹配。
+# /front.php/check-in/status 里，/check-in/status 才是 PATH_INFO。只写 /front.php 对不上短路由。
 
 # 内核探活，正文是纯文本 slimapp ok
 slim_health:
@@ -51,7 +52,7 @@ slim_recharge_status:
   defaults:
     _controller: SlimRechargeController::statusAction
 
-# 按 mock_payments 重算当月金额。请求里的 amount 不累加。
+# amount 写入 recharge_payment_orders，再按该角色当月订单合计。mock_payments.php 里同一订单号只导入一次。
 slim_recharge_record:
   path: /recharge/record
   methods: [POST]

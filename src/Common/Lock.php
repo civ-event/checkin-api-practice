@@ -9,7 +9,7 @@ use Memcached;
 /**
  * 公司风格的 Memcached 锁，对齐 Lock::memcachedLock。
  * 抢锁用 add（key 不存在才写入）。释放用 CAS，避免锁过期后被别人拿走、自己又把它删掉。
- * * 新入口的打卡、领奖、充值都用这把锁：add 抢锁，CAS 释放。
+ * 新入口的打卡、领奖、充值都用这把锁：add 抢锁，CAS 释放。
  */
 final class Lock
 {

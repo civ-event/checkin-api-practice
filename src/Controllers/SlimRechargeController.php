@@ -19,7 +19,7 @@ use Checkin\Auth\LoginContext;
  */
 class SlimRechargeController
 {
-    /** GET /front.php/recharge/status 不加锁。先按 mock 流水覆盖当月金额，再返回进度。 */
+    /** GET /front.php/recharge/status 不加锁。尚未入库的种子订单导入一次，再按订单表重算当月金额。 */
     public function statusAction(Request $request, RechargeService $rechargeService, JwtService $jwt): array
     {
         $roleId = $this->roleId($request, $jwt);

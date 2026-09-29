@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>checkin-api-practice 20260929 测试计划</title>
+<style>
+  body { font-family: "Songti SC", "Noto Serif SC", serif; margin: 24px; color: #1a1a1a; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  h2 { font-size: 16px; margin-top: 28px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  p, li, td, th { font-size: 13px; line-height: 1.45; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
+  th, td { border: 1px solid #bbb; padding: 4px 6px; vertical-align: top; text-align: left; }
+  th { background: #f3f3f3; }
+  .meta td:first-child { width: 8em; background: #fafafa; }
+  select { font: inherit; }
+  a { color: #083; }
+  @media print {
+    select { border: none; appearance: none; }
+    a { color: inherit; text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+<h1>checkin-api-practice 测试计划</h1>
+<table class="meta">
+  <tr><td>版本</td><td>20260929</td></tr>
+  <tr><td>分支</td><td>main，审查节点 8b5c9c0</td></tr>
+  <tr><td>基线</td><td>9971672</td></tr>
+  <tr><td>日期</td><td>2026-09-29</td></tr>
+  <tr><td>审查</td><td><a href="checkin-api-practice_20260929_CodeReview.md">checkin-api-practice_20260929_CodeReview.md</a></td></tr>
+  <tr><td>平台</td><td>Server。基址取 .env 的 HTTP_PORT，本机练习常用 http://localhost:18080，Compose 缺省 8080</td></tr>
+</table>
+
+<h2>统计</h2>
+<table id="stats">
+  <tr><th></th><th>P0</th><th>P1</th><th>P2</th><th>合计</th></tr>
+  <tr><td>用例</td><td id="n-p0">0</td><td id="n-p1">0</td><td id="n-p2">0</td><td id="n-all">0</td></tr>
+  <tr><td>通过</td><td id="p-p0">0</td><td id="p-p1">0</td><td id="p-p2">0</td><td id="p-all">0</td></tr>
+  <tr><td>失败</td><td id="f-p0">0</td><td id="f-p1">0</td><td id="f-p2">0</td><td id="f-all">0</td></tr>
+  <tr><td>未执行</td><td id="u-p0">0</td><td id="u-p1">0</td><td id="u-p2">0</td><td id="u-all">0</td></tr>
+</table>
+<p>下拉只保存在本页。刷新后恢复为未执行。TC-API-01c 的结果固定为 N/A。</p>
+
+<h2>CR 发版门禁</h2>
+<table>
+  <tr><th>门禁项</th><th>结果</th></tr>
+  <tr><td>P0 需求匹配</td><td>选角、登录、签到、累充查询和领取已实现。入账只在 <code>/api-front/activity/recharge/record</code>。假登录、假发奖与「不能调用就用假数据」一致</td></tr>
+  <tr><td>P0 修复有用例</td><td>第七章草案已落成 MD。手工未执行，不能标 ✅。PHPUnit 只覆盖其中一部分</td></tr>
+  <tr><td>CR-P0 open</td><td>1。CR-1 固定练习时钟仍在默认 Compose。本地练习按决定保留</td></tr>
+  <tr><td>平台 E2E</td><td>服务端单端。TC-E2E-01 未执行</td></tr>
+  <tr><td>测试陷阱</td><td>7.4 已写入下方陷阱表</td></tr>
+  <tr><td>跨服务联调</td><td>无关联仓库。真实发奖未联调</td></tr>
+  <tr><td>建议</td><td>练习可继续。当作线上配置仍是「需修复后发版」</td></tr>
+</table>
+
+<h2>执行表</h2>
+<table id="cases">
+  <thead>
+    <tr>
+      <th>编号</th><th>名称</th><th>优先级</th><th>平台</th><th>来源</th><th>自动化</th><th>结果</th><th>缺陷 ID</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<h2>测试陷阱</h2>
+<ul>
+  <li>不要用宿主机日期判断签到第几天。容器从 2026-10-10 17:00 UTC 起算，之后继续走。PHP 显示的是 Asia/Shanghai。</li>
+  <li>不要断言 <code>date()</code> 永远等于 2026-10-10。<code>FAKETIME</code> 带 <code>@</code>。</li>
+  <li>不要预期成功体为 <code>{code,message,data}</code>。成功是控制器数组原样 JSON。错误才有 <code>code</code> 和 <code>exception</code>。</li>
+  <li>不要断言角色乙合计一定是 600。种子 <code>send_time</code> 在上海和 Etc/GMT+5 都落在 2026-09。10 月合计不含这 600。乙的服务器是 Asia/Shanghai，与 <code>game.php</code> 一致。</li>
+  <li>前端路径 <code>monthly-cumulative-recharge</code> 没有 record。入账打 <code>/api-front/activity/recharge/record</code>。</li>
+  <li><code>routes.yml</code> 的 record 注释与代码一致：amount 写入订单表，再按当月合计。按 TC-PAY-02 断言增加 100。</li>
+  <li>旧库若只跑过 008、没跑 009，同订单号不同金额仍可能各插一行。</li>
+  <li>探活 <code>/</code>、<code>/memcached</code>、<code>/lock</code>、<code>/db</code> 是纯文本。<code>/json</code> 才是 <code>{"ok":true}</code>。</li>
+  <li>对外端口以 <code>HTTP_PORT</code> 为准。</li>
+  <li>连续写接口间隔太短会 409 <code>RESOURCE_BUSY</code>。锁墓碑约 1 秒，不要当成业务错误码。</li>
+  <li>重启 app 后假时钟跳回锚点。若 <code>last_check_time</code> 落在未来，签到 status 为 500，日志是 <code>lastCheckTime is in the future</code>。</li>
+</ul>
+
+<h2>日志关键字</h2>
+<table>
+  <tr><th>信号</th><th>含义</th></tr>
+  <tr><td><code>[gift] mock</code></td><td>GIFT_API_URL 为空，未请求游戏服</td></tr>
+  <tr><td><code>[gift] http failed</code></td><td>进度已提交，发奖失败</td></tr>
+  <tr><td><code>[gift] sent</code></td><td>游戏服 2xx</td></tr>
+  <tr><td><code>[checkin] reject</code></td><td>签到业务拒绝，进度未写</td></tr>
+  <tr><td><code>ACTIVITY_NOT_FOUND</code></td><td>类型或 id 不匹配、未开放，或不在 2026-09-01～2026-10-31</td></tr>
+  <tr><td>容器 <code>date</code></td><td>先确认假时钟，再解释任何「今天」</td></tr>
+</table>
+
+<script>
+const rows = [
+  ["TC-E2E-01", "选角、登录、查签到、查累充", "P0", "7.1 / 第九章", "无"],
+  ["TC-AUTH-01", "假账号列出四个角色", "P0", "7.1", "无"],
+  ["TC-AUTH-02", "登录签发 activityUserToken", "P0", "7.1", "无"],
+  ["TC-AUTH-03", "只带查询串 token", "P0", "CR-4 / 7.2", "无"],
+  ["TC-CHECKIN-01", "月度签到进度", "P0", "7.1", "无"],
+  ["TC-CHECKIN-02", "打卡与当天补签", "P0", "7.1", "CheckInClockInTest 部分"],
+  ["TC-CHECKIN-03", "补签次数用尽", "P1", "7.1", "无"],
+  ["TC-CHECKIN-04", "签到发奖失败不回滚", "P1", "CR-2", "无"],
+  ["TC-CHECKIN-05", "签到传入活动 id 2", "P0", "7.2", "RunningActivityTest 部分"],
+  ["TC-PAY-01", "种子不计入 10 月合计", "P0", "7.2", "无"],
+  ["TC-PAY-02", "入账增加且同订单不双计", "P0", "7.3 / CR-3 / CR-7", "RechargeRecordTest 部分"],
+  ["TC-PAY-03", "未达档、领取、再领", "P0", "7.2", "RechargeClaimTest 部分"],
+  ["TC-PAY-04", "累充发奖失败不回滚", "P0", "7.3 / CR-2", "无"],
+  ["TC-PAY-05", "任意正整数都会入账", "P1", "7.1 / CR-3", "无"],
+  ["TC-PAY-06", "同一档并发领取", "P0", "7.2", "无"],
+  ["TC-PAY-07", "累充传入活动 id 1", "P1", "第四章", "无"],
+  ["TC-API-01", "假时钟从锚点继续走", "P0", "CR-1 / 7.3", "ContainerClockTest 只断言 2026-10"],
+  ["TC-API-01b", "重启后时钟跳回锚点", "P0", "CR-1 时序", "无"],
+  ["TC-API-01c", "时钟无第二条路径", "P0", "CR-1 竞态", "N/A"],
+  ["TC-API-01d", "不能用宿主机日期", "P0", "CR-1 / 7.4", "无"],
+  ["TC-API-02", "登录、发奖、种子用假数据", "P0", "第一章", "无"],
+  ["TC-REG-01", "探活纯文本", "P2", "7.4", "无"],
+  ["TC-REG-02", "订单唯一键为角色加订单号", "P2", "7.4", "无"]
+];
+
+const tbody = document.querySelector("#cases tbody");
+rows.forEach((row) => {
+  const tr = document.createElement("tr");
+  tr.dataset.pri = row[2];
+  const link = document.createElement("a");
+  link.href = "test-cases/" + row[0] + ".md";
+  link.textContent = row[0];
+  const td0 = document.createElement("td");
+  td0.appendChild(link);
+  tr.appendChild(td0);
+  row.slice(1, 5).forEach((text) => {
+    const td = document.createElement("td");
+    td.textContent = text;
+    tr.appendChild(td);
+  });
+  const auto = document.createElement("td");
+  auto.textContent = row[4];
+  tr.appendChild(auto);
+  const tdSel = document.createElement("td");
+  const sel = document.createElement("select");
+  ["未执行", "通过", "失败", "阻塞", "N/A"].forEach((label) => {
+    const opt = document.createElement("option");
+    opt.value = label;
+    opt.textContent = label;
+    if (row[0] === "TC-API-01c" && label === "N/A") opt.selected = true;
+    sel.appendChild(opt);
+  });
+  if (row[0] === "TC-API-01c") sel.disabled = true;
+  sel.addEventListener("change", recount);
+  tdSel.appendChild(sel);
+  tr.appendChild(tdSel);
+  const bug = document.createElement("td");
+  const input = document.createElement("input");
+  input.type = "text";
+  input.setAttribute("aria-label", row[0] + " 缺陷 ID");
+  bug.appendChild(input);
+  tr.appendChild(bug);
+  tbody.appendChild(tr);
+});
+
+function recount() {
+  const bucket = { P0: {用例:0,通过:0,失败:0,未执行:0}, P1: {用例:0,通过:0,失败:0,未执行:0}, P2: {用例:0,通过:0,失败:0,未执行:0} };
+  document.querySelectorAll("#cases tbody tr").forEach((tr) => {
+    const pri = tr.dataset.pri;
+    bucket[pri].用例 += 1;
+    const value = tr.querySelector("select").value;
+    if (value === "通过") bucket[pri].通过 += 1;
+    else if (value === "失败") bucket[pri].失败 += 1;
+    else if (value === "未执行") bucket[pri].未执行 += 1;
+  });
+  ["p0", "p1", "p2"].forEach((key) => {
+    const pri = key.toUpperCase();
+    document.getElementById("n-" + key).textContent = bucket[pri].用例;
+    document.getElementById("p-" + key).textContent = bucket[pri].通过;
+    document.getElementById("f-" + key).textContent = bucket[pri].失败;
+    document.getElementById("u-" + key).textContent = bucket[pri].未执行;
+  });
+  const sum = (field) => bucket.P0[field] + bucket.P1[field] + bucket.P2[field];
+  document.getElementById("n-all").textContent = sum("用例");
+  document.getElementById("p-all").textContent = sum("通过");
+  document.getElementById("f-all").textContent = sum("失败");
+  document.getElementById("u-all").textContent = sum("未执行");
+}
+recount();
+</script>
+</body>
+</html>

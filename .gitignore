@@ -19,6 +19,7 @@ composer.phar
 /var/log/
 /var/cache/
 *.log
+/.phpunit.cache/
 
 # Docker 数据（若本地挂载）
 /docker/mysql/data/
